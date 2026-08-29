@@ -11,8 +11,11 @@ import {
 import { TILE_SIZE } from "@/lib/terrain";
 import {
   getExitRoadTileFlow,
+  getPathAtExit,
+  getPathIndexAtTile,
   getRoadTileFlows,
   isExitTile,
+  layoutForPath,
   shouldPlaceDirtTile,
   type RoadTileFlow,
   type WorldLayout,
@@ -32,6 +35,7 @@ const STRAIGHT_CENTER_Z = -STRAIGHT_LENGTH / 2;
 const CORNER_CENTER_X_RIGHT = -CORNER_LEG_LENGTH / 2;
 const CORNER_CENTER_X_LEFT = CORNER_LEG_LENGTH / 2;
 const CORNER_CENTER_Z = -CORNER_LEG_LENGTH / 2;
+const PATH_PREVIEW_OPACITY = 0.5;
 
 type ArrowVariant = "straight" | "left" | "right";
 
@@ -39,6 +43,7 @@ type DirtTileFlowMarkersProps = {
   layout: WorldLayout;
   origin: ChunkOrigin;
   opacity?: number;
+  revealedPathCount?: number;
 };
 
 const arrowMaterial = {
@@ -302,30 +307,49 @@ export function DirtTileFlowMarkers({
   layout,
   origin,
   opacity = 1,
+  revealedPathCount,
 }: DirtTileFlowMarkersProps) {
   const flows = useMemo(() => {
     return getRoadTileFlows(layout)
       .filter(({ x, z }) => shouldPlaceDirtTile(layout, x, z))
       .map((flow) => {
-        if (isExitTile(layout, flow.x, flow.z)) {
-          return getExitRoadTileFlow(layout) ?? flow;
+        if (!isExitTile(layout, flow.x, flow.z)) {
+          return flow;
         }
 
-        return flow;
+        const path = getPathAtExit(layout, { x: flow.x, z: flow.z });
+
+        if (!path) {
+          return flow;
+        }
+
+        return (
+          getExitRoadTileFlow(layoutForPath(layout, path)) ?? flow
+        );
       });
   }, [layout]);
 
   return (
     <group>
-      {flows.map((flow) => (
-        <DirtTileFlowMarker
-          key={`${flow.x}:${flow.z}`}
-          flow={flow}
-          layout={layout}
-          origin={origin}
-          opacity={opacity}
-        />
-      ))}
+      {flows.map((flow) => {
+        const pathIndex = getPathIndexAtTile(layout, flow.x, flow.z);
+        const tileOpacity =
+          revealedPathCount === undefined || pathIndex < 0
+            ? opacity
+            : pathIndex < revealedPathCount
+              ? 1
+              : PATH_PREVIEW_OPACITY;
+
+        return (
+          <DirtTileFlowMarker
+            key={`${flow.x}:${flow.z}`}
+            flow={flow}
+            layout={layout}
+            origin={origin}
+            opacity={tileOpacity}
+          />
+        );
+      })}
     </group>
   );
 }

@@ -19,9 +19,14 @@ import { generateTerrain, TILE_SIZE, TERRAIN_SIZE } from "@/lib/terrain";
 const GROUND_Y = 0.005;
 const SELECTED_OVERLAY_Y = 0.002;
 
+export type GrassTilePointer = {
+  clientX: number;
+  clientY: number;
+};
+
 export type GrassSelectionProps = {
   selectedTileKey?: string | null;
-  onSelectTile?: (coord: GlobalGridCoord) => void;
+  onSelectTile?: (coord: GlobalGridCoord, pointer: GrassTilePointer) => void;
 };
 
 function useGrassMaterials(opacity = 1) {
@@ -58,7 +63,7 @@ function SelectableGrassTile({
   gz: number;
   material: THREE.MeshStandardMaterial;
   selectedTileKey?: string | null;
-  onSelectTile?: (coord: GlobalGridCoord) => void;
+  onSelectTile?: (coord: GlobalGridCoord, pointer: GrassTilePointer) => void;
 }) {
   const { x, z } = globalTileWorldPosition(gx, gz);
   const tileKey = globalCoordKey(gx, gz);
@@ -72,7 +77,10 @@ function SelectableGrassTile({
         receiveShadow
         onClick={(event) => {
           event.stopPropagation();
-          onSelectTile?.({ gx, gz });
+          onSelectTile?.(
+            { gx, gz },
+            { clientX: event.clientX, clientY: event.clientY },
+          );
         }}
         onPointerOver={(event) => {
           event.stopPropagation();
@@ -141,14 +149,25 @@ export function GrassGround({
   size = TERRAIN_SIZE,
   origin,
   opacity = 1,
+  omitLocalKeys,
   selectedTileKey,
   onSelectTile,
 }: {
   size?: number;
   origin: ChunkOrigin;
   opacity?: number;
+  /** Local `x:z` keys where grass should not be rendered (e.g. dirt roads). */
+  omitLocalKeys?: ReadonlySet<string>;
 } & GrassSelectionProps) {
-  const tiles = useMemo(() => generateTerrain(size), [size]);
+  const tiles = useMemo(() => {
+    const all = generateTerrain(size);
+
+    if (!omitLocalKeys || omitLocalKeys.size === 0) {
+      return all;
+    }
+
+    return all.filter((tile) => !omitLocalKeys.has(tile.key));
+  }, [size, omitLocalKeys]);
   const materials = useGrassMaterials(opacity);
 
   return (

@@ -1,6 +1,6 @@
 "use client";
 
-import type { TextureId } from "@/lib/pixel-art/textures";
+import type { GrassTilePointer } from "@/components/game/ground-plane";
 import {
   PixelTextureMaterial,
 } from "@/lib/pixel-art/use-pixel-texture";
@@ -13,24 +13,69 @@ export function TreeModel({
   position = [0, 0, 0],
   rotation = 0,
   scale = 1,
+  onSelect,
 }: {
   position?: [number, number, number];
   rotation?: number;
   scale?: number;
+  onSelect?: (pointer: GrassTilePointer) => void;
 }) {
+  function handleClick(event: {
+    stopPropagation: () => void;
+    clientX: number;
+    clientY: number;
+  }) {
+    if (!onSelect) {
+      return;
+    }
+
+    event.stopPropagation();
+    onSelect({ clientX: event.clientX, clientY: event.clientY });
+  }
+
+  function handlePointerOver(event: { stopPropagation: () => void }) {
+    if (!onSelect) {
+      return;
+    }
+
+    event.stopPropagation();
+    document.body.style.cursor = "pointer";
+  }
+
+  function handlePointerOut() {
+    if (!onSelect) {
+      return;
+    }
+
+    document.body.style.cursor = "auto";
+  }
+
   return (
     <group position={position} rotation={[0, rotation, 0]} scale={scale}>
-      <mesh position={[0, TRUNK_HEIGHT / 2, 0]}>
+      <mesh
+        position={[0, TRUNK_HEIGHT / 2, 0]}
+        onClick={handleClick}
+        onPointerOver={handlePointerOver}
+        onPointerOut={handlePointerOut}
+      >
         <boxGeometry args={[TRUNK_WIDTH, TRUNK_HEIGHT, TRUNK_WIDTH]} />
         <PixelTextureMaterial texture="bark" repeat={[1, 2]} />
       </mesh>
-      <mesh position={[0, TRUNK_HEIGHT + FOLIAGE_SIZE * 0.38, 0]}>
+      <mesh
+        position={[0, TRUNK_HEIGHT + FOLIAGE_SIZE * 0.38, 0]}
+        onClick={handleClick}
+        onPointerOver={handlePointerOver}
+        onPointerOut={handlePointerOut}
+      >
         <boxGeometry args={[FOLIAGE_SIZE, FOLIAGE_SIZE, FOLIAGE_SIZE]} />
         <PixelTextureMaterial texture="tree-foliage" repeat={[2, 2]} />
       </mesh>
       <mesh
         position={[0, TRUNK_HEIGHT + FOLIAGE_SIZE * 0.72, 0]}
         scale={[0.72, 0.55, 0.72]}
+        onClick={handleClick}
+        onPointerOver={handlePointerOver}
+        onPointerOut={handlePointerOut}
       >
         <boxGeometry args={[FOLIAGE_SIZE, FOLIAGE_SIZE, FOLIAGE_SIZE]} />
         <PixelTextureMaterial texture="tree-foliage" repeat={[2, 2]} />

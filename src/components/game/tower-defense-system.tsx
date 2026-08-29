@@ -4,6 +4,7 @@ import { useFrame } from "@react-three/fiber";
 import { useRef } from "react";
 import type { RefObject } from "react";
 
+import type { DamageType } from "@/lib/damage-types";
 import {
   getTowerMuzzlePosition,
   isWithinTowerStatsRange,
@@ -15,6 +16,10 @@ export type PlacedTower = {
   gx: number;
   gz: number;
   typeId: TowerTypeId;
+  /** Raised hill placement — grants attack range bonus. */
+  onHill?: boolean;
+  /** World Y of the tile top when placed on a hill. */
+  groundY?: number;
 };
 
 export type FiredProjectile = {
@@ -23,6 +28,7 @@ export type FiredProjectile = {
   targetEnemyId: number;
   typeId: TowerTypeId;
   damage: number;
+  damageType: DamageType;
   aoeTiles: number;
   speed: number;
   from: [number, number, number];
@@ -64,7 +70,8 @@ export function TowerDefenseSystem({
 
       let nearestEnemyId: number | null = null;
       let nearestDistance = Number.POSITIVE_INFINITY;
-      const towerMuzzle = getTowerMuzzlePosition(tower.gx, tower.gz);
+      const groundY = tower.groundY ?? 0;
+      const towerMuzzle = getTowerMuzzlePosition(tower.gx, tower.gz, groundY);
 
       for (const enemyId of enemyIds) {
         if (pendingTargetIdsRef.current?.has(enemyId)) {
@@ -78,7 +85,16 @@ export function TowerDefenseSystem({
 
         const [enemyX, , enemyZ] = enemyPosition;
 
-        if (!isWithinTowerStatsRange(tower.gx, tower.gz, enemyX, enemyZ, stats)) {
+        if (
+          !isWithinTowerStatsRange(
+            tower.gx,
+            tower.gz,
+            enemyX,
+            enemyZ,
+            stats,
+            !!tower.onHill,
+          )
+        ) {
           continue;
         }
 
@@ -102,7 +118,7 @@ export function TowerDefenseSystem({
         continue;
       }
 
-      const from = getTowerMuzzlePosition(tower.gx, tower.gz);
+      const from = getTowerMuzzlePosition(tower.gx, tower.gz, groundY);
       const to: [number, number, number] = [
         targetPosition[0],
         targetPosition[1] + 0.2,
@@ -118,6 +134,7 @@ export function TowerDefenseSystem({
         targetEnemyId: nearestEnemyId,
         typeId: stats.id,
         damage: stats.damage,
+        damageType: stats.damageType,
         aoeTiles: stats.projectileAoeTiles,
         speed: stats.projectileSpeed,
         from,

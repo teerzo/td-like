@@ -69,7 +69,9 @@ export default function HomeScene() {
           })
         : null}
       <CastleModel position={[-2.5, 0.5, -2]} />
-      <TowerModel position={[2.5, 0.5, 2]} />
+      <TowerModel typeId="rook" position={[2.5, 0.5, 2]} />
+      <TowerModel typeId="archer" position={[1.2, 0.5, 2.4]} />
+      <TowerModel typeId="mage" position={[3.6, 0.5, 1.5]} />
       <RockModel position={[-1.2, 0, 1.6]} rotation={0.4} scale={1.1} />
       <MountainModel position={[2.1, 0, -1.3]} scale={1.05} />
       <PondModel position={[-2, 0, 2.2]} />

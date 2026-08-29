@@ -1,5 +1,10 @@
 import { TILE_SPACING } from "@/lib/terrain";
-import { isOnGrid, traceRoadPathCoords, type WorldLayout } from "@/lib/world-layout";
+import {
+  isOnGrid,
+  syncLayoutFromPaths,
+  traceRoadPathCoords,
+  type WorldLayout,
+} from "@/lib/world-layout";
 
 export type GlobalGridCoord = {
   gx: number;
@@ -60,8 +65,20 @@ export function getLayoutWorldPath(
   layout: WorldLayout,
   origin: ChunkOrigin,
   y = 0.12,
+  pathIndex = 0,
 ): [number, number, number][] | null {
-  const path = traceRoadPathCoords(layout);
+  const roadPath = layout.paths[pathIndex] ?? layout.paths[0];
+
+  if (!roadPath) {
+    return null;
+  }
+
+  const single =
+    layout.paths.length === 1 && pathIndex === 0
+      ? layout
+      : syncLayoutFromPaths(layout.size, layout.castle, [roadPath]);
+
+  const path = traceRoadPathCoords(single);
 
   if (!path) {
     return null;
@@ -75,6 +92,55 @@ export function getLayoutWorldPath(
 
     return [x, y, z];
   });
+}
+
+const PATH_JOIN_EPSILON = 0.05;
+
+/**
+ * World path from an outer level's entrance through parent levels into the main castle.
+ * `levels[0]` is the main/root layout; `fromIndex` is where enemies spawn.
+ */
+export function getChainedWorldPath(
+  levels: PlacedLayout[],
+  fromIndex: number,
+  y = 0.12,
+  outerPathIndex = 0,
+): [number, number, number][] | null {
+  if (levels.length === 0 || fromIndex < 0 || fromIndex >= levels.length) {
+    return null;
+  }
+
+  const segments: [number, number, number][][] = [];
+
+  for (let i = fromIndex; i >= 0; i -= 1) {
+    const level = levels[i]!;
+    const pathIndex = i === fromIndex ? outerPathIndex : 0;
+    const segment = getLayoutWorldPath(
+      level.layout,
+      level.origin,
+      y,
+      pathIndex,
+    );
+
+    if (!segment || segment.length < 2) {
+      return null;
+    }
+
+    segments.push(segment);
+  }
+
+  let path = segments[0]!;
+
+  for (let s = 1; s < segments.length; s += 1) {
+    const next = segments[s]!;
+    const last = path[path.length - 1]!;
+    const first = next[0]!;
+    const joins =
+      Math.hypot(last[0] - first[0], last[2] - first[2]) < PATH_JOIN_EPSILON;
+    path = path.concat(joins ? next.slice(1) : next);
+  }
+
+  return path.length >= 2 ? path : null;
 }
 
 export function collectOnGridGlobalKeys(
@@ -106,15 +172,14 @@ export function collectLayoutGlobalKeys(
     }
   }
 
-  keys.add(
-    globalCoordKey(
-      origin.gx + layout.entrance.x,
-      origin.gz + layout.entrance.z,
-    ),
-  );
-  keys.add(
-    globalCoordKey(origin.gx + layout.exit.x, origin.gz + layout.exit.z),
-  );
+  for (const path of layout.paths) {
+    keys.add(
+      globalCoordKey(origin.gx + path.entrance.x, origin.gz + path.entrance.z),
+    );
+    keys.add(
+      globalCoordKey(origin.gx + path.exit.x, origin.gz + path.exit.z),
+    );
+  }
 
   return keys;
 }

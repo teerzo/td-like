@@ -1,11 +1,21 @@
 import { globalTileWorldPosition } from "@/lib/global-grid";
 import { TILE_SPACING } from "@/lib/terrain";
 import {
-  getTowerAttackRangeWorld,
+  getAttackRangeWorldFromTiles,
+  HILL_TOWER_RANGE_BONUS_TILES,
   type TowerStats,
 } from "@/lib/tower-types";
 
 export const TOWER_MUZZLE_Y = 0.9;
+
+export function getEffectiveAttackRangeTiles(
+  stats: TowerStats,
+  onHill = false,
+) {
+  return (
+    stats.attackRangeTiles + (onHill ? HILL_TOWER_RANGE_BONUS_TILES : 0)
+  );
+}
 
 export function isWithinTowerStatsRange(
   towerGx: number,
@@ -13,21 +23,24 @@ export function isWithinTowerStatsRange(
   enemyX: number,
   enemyZ: number,
   stats: TowerStats,
+  onHill = false,
 ) {
   const { x, z } = globalTileWorldPosition(towerGx, towerGz);
-
-  return (
-    Math.hypot(enemyX - x, enemyZ - z) <= getTowerAttackRangeWorld(stats)
+  const rangeWorld = getAttackRangeWorldFromTiles(
+    getEffectiveAttackRangeTiles(stats, onHill),
   );
+
+  return Math.hypot(enemyX - x, enemyZ - z) <= rangeWorld;
 }
 
 export function getTowerMuzzlePosition(
   gx: number,
   gz: number,
+  groundY = 0,
 ): [number, number, number] {
   const { x, z } = globalTileWorldPosition(gx, gz);
 
-  return [x, TOWER_MUZZLE_Y, z];
+  return [x, TOWER_MUZZLE_Y + groundY, z];
 }
 
 export function getEnemiesInAoe(

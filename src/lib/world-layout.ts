@@ -11,18 +11,36 @@ export type GridCoord = {
   z: number;
 };
 
+export type RoadPath = {
+  entrance: GridCoord;
+  gate: GridCoord;
+  exit: GridCoord;
+  roadKeys: ReadonlySet<string>;
+};
+
 export type WorldLayout = {
   size: number;
   castle: GridCoord;
+  paths: RoadPath[];
+  /** Primary path aliases (paths[0]) for spawn chaining and legacy call sites. */
   exit: GridCoord;
   gate: GridCoord;
   entrance: GridCoord;
+  /** Union of all path road keys. */
   roadKeys: ReadonlySet<string>;
 };
 
 type Edge = "north" | "south" | "west" | "east";
 
 export type LevelEdge = Edge;
+
+const ALL_EDGES: Edge[] = ["north", "south", "west", "east"];
+
+/**
+ * When true, main layout packs up to 4 isolated paths and play-scene can reveal them.
+ * Kept off for now; multi-path helpers remain for later reuse.
+ */
+export const ENABLE_MAIN_MULTI_PATH = false;
 
 /** Tiles inward from each corner that entrance/exit may not use (0 = corner tile only). */
 export const ENTRANCE_CORNER_MARGIN = 1;
@@ -32,6 +50,39 @@ export const SPAWN_ENTRANCE_CORNER_MARGIN = ENTRANCE_CORNER_MARGIN + 1;
 
 function coordKey(coord: GridCoord) {
   return `${coord.x}:${coord.z}`;
+}
+
+export function syncLayoutFromPaths(
+  size: number,
+  castle: GridCoord,
+  paths: RoadPath[],
+): WorldLayout {
+  if (paths.length === 0) {
+    throw new Error("WorldLayout requires at least one path.");
+  }
+
+  const primary = paths[0]!;
+  const roadKeys = new Set<string>();
+
+  for (const path of paths) {
+    for (const key of path.roadKeys) {
+      roadKeys.add(key);
+    }
+  }
+
+  return {
+    size,
+    castle,
+    paths,
+    entrance: primary.entrance,
+    gate: primary.gate,
+    exit: primary.exit,
+    roadKeys,
+  };
+}
+
+export function getLayoutPaths(layout: WorldLayout): RoadPath[] {
+  return layout.paths;
 }
 
 function effectiveCornerMargin(size: number, preferredMargin: number) {
@@ -69,20 +120,29 @@ function pickRandomEdgeTile(
   size: number,
   random: () => number,
 ): { entrance: GridCoord; edge: Edge } {
-  const edges: Edge[] = ["north", "south", "west", "east"];
+  const edge = ALL_EDGES[Math.floor(random() * ALL_EDGES.length)]!;
+  const entrance = pickEntranceOnEdge(edge, size, random);
+
+  return { entrance, edge };
+}
+
+function pickEntranceOnEdge(
+  edge: Edge,
+  size: number,
+  random: () => number,
+): GridCoord {
   const validAlong = getValidEntranceAlongIndices(size);
-  const edge = edges[Math.floor(random() * edges.length)]!;
   const along = validAlong[Math.floor(random() * validAlong.length)]!;
 
   switch (edge) {
     case "north":
-      return { entrance: { x: along, z: -1 }, edge };
+      return { x: along, z: -1 };
     case "south":
-      return { entrance: { x: along, z: size }, edge };
+      return { x: along, z: size };
     case "west":
-      return { entrance: { x: -1, z: along }, edge };
+      return { x: -1, z: along };
     case "east":
-      return { entrance: { x: size, z: along }, edge };
+      return { x: size, z: along };
   }
 }
 
@@ -486,10 +546,17 @@ function pickCastleExit(
   gate: GridCoord,
   size: number,
   random: () => number,
-): GridCoord {
+  excludeExitKeys: ReadonlySet<string> = new Set(),
+): GridCoord | null {
   const neighbors = PATH_DIRS.map((dir) => addPathStep(castle, dir)).filter(
-    (coord) => isOnGrid(coord.x, coord.z, size),
+    (coord) =>
+      isOnGrid(coord.x, coord.z, size) &&
+      !excludeExitKeys.has(coordKey(coord)),
   );
+
+  if (neighbors.length === 0) {
+    return null;
+  }
 
   const towardGate = neighbors
     .map((coord) => ({
@@ -509,6 +576,157 @@ function pickCastleExit(
     .map(({ coord }) => coord);
 
   return candidates[Math.floor(random() * candidates.length)]!;
+}
+
+function getCastleNeighborCoords(
+  castle: GridCoord,
+  size: number,
+): GridCoord[] {
+  return PATH_DIRS.map((dir) => addPathStep(castle, dir)).filter((coord) =>
+    isOnGrid(coord.x, coord.z, size),
+  );
+}
+
+export function canAddMainLevelPath(layout: WorldLayout): boolean {
+  const usedEdges = new Set(
+    layout.paths.map((path) => getEntranceEdge(path.entrance, layout.size)),
+  );
+
+  if (ALL_EDGES.every((edge) => usedEdges.has(edge))) {
+    return false;
+  }
+
+  const usedExits = new Set(layout.paths.map((path) => coordKey(path.exit)));
+
+  return getCastleNeighborCoords(layout.castle, layout.size).some(
+    (coord) => !usedExits.has(coordKey(coord)),
+  );
+}
+
+const MAX_ADD_PATH_ATTEMPTS = 64;
+
+/** True when sets share a tile or any new tile is cardinally adjacent to an existing road. */
+function pathConnectsToExistingRoads(
+  newRoadKeys: ReadonlySet<string>,
+  existingRoadKeys: ReadonlySet<string>,
+): boolean {
+  for (const key of newRoadKeys) {
+    if (existingRoadKeys.has(key)) {
+      return true;
+    }
+
+    const [x, z] = key.split(":").map(Number);
+
+    for (const { dx, dz } of PATH_DIRS) {
+      if (existingRoadKeys.has(coordKey({ x: x + dx, z: z + dz }))) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+export function addMainLevelPath(
+  layout: WorldLayout,
+  random: () => number = Math.random,
+  options?: { edge?: LevelEdge },
+): WorldLayout | null {
+  if (!canAddMainLevelPath(layout)) {
+    return null;
+  }
+
+  const usedEdges = new Set(
+    layout.paths.map((path) => getEntranceEdge(path.entrance, layout.size)),
+  );
+  const freeEdges = ALL_EDGES.filter((edge) => !usedEdges.has(edge));
+  const candidateEdges = options?.edge
+    ? freeEdges.includes(options.edge)
+      ? [options.edge]
+      : []
+    : freeEdges;
+
+  if (candidateEdges.length === 0) {
+    return null;
+  }
+
+  const usedExits = new Set(layout.paths.map((path) => coordKey(path.exit)));
+
+  for (let attempt = 0; attempt < MAX_ADD_PATH_ATTEMPTS; attempt += 1) {
+    const edge =
+      candidateEdges[Math.floor(random() * candidateEdges.length)]!;
+    const entrance = pickEntranceOnEdge(edge, layout.size, random);
+    const gate = getGridGate(entrance, layout.size);
+    const exit = pickCastleExit(
+      layout.castle,
+      gate,
+      layout.size,
+      random,
+      usedExits,
+    );
+
+    if (!exit) {
+      return null;
+    }
+
+    const draft = syncLayoutFromPaths(layout.size, layout.castle, [
+      {
+        entrance,
+        gate,
+        exit,
+        roadKeys: generateRoadPathWithTurns(
+          entrance,
+          gate,
+          exit,
+          layout.size,
+          random,
+        ),
+      },
+    ]);
+    const finalized = finalizeRoadGraph(draft);
+
+    if (!finalized) {
+      continue;
+    }
+
+    const newPath = finalized.paths[0]!;
+
+    if (pathConnectsToExistingRoads(newPath.roadKeys, layout.roadKeys)) {
+      continue;
+    }
+
+    return syncLayoutFromPaths(layout.size, layout.castle, [
+      ...layout.paths,
+      newPath,
+    ]);
+  }
+
+  return null;
+}
+
+/** Edges of the main grid that do not yet have a path entrance. */
+export function getUnusedEntranceEdges(layout: WorldLayout): LevelEdge[] {
+  const usedEdges = new Set(
+    layout.paths.map((path) => getEntranceEdge(path.entrance, layout.size)),
+  );
+
+  return ALL_EDGES.filter((edge) => !usedEdges.has(edge));
+}
+
+/** On-grid perimeter tile at the center of an edge (locked gate location). */
+export function getEdgeGateTile(edge: LevelEdge, size: number): GridCoord {
+  const mid = Math.floor(size / 2);
+
+  switch (edge) {
+    case "north":
+      return { x: mid, z: 0 };
+    case "south":
+      return { x: mid, z: size - 1 };
+    case "west":
+      return { x: 0, z: mid };
+    case "east":
+      return { x: size - 1, z: mid };
+  }
 }
 
 export function getEntranceEdge(
@@ -542,8 +760,6 @@ function getOppositeEdge(edge: Edge): Edge {
       return "west";
   }
 }
-
-const ALL_EDGES: Edge[] = ["north", "south", "west", "east"];
 
 export type SpawnTurn = "straight" | "left" | "right";
 
@@ -779,46 +995,98 @@ export function generateWorldLayout(
   size = TERRAIN_SIZE,
   random: () => number = Math.random,
 ): WorldLayout {
+  let best: WorldLayout | null = null;
+  const maxPaths = ENABLE_MAIN_MULTI_PATH
+    ? Math.min(4, ALL_EDGES.length)
+    : 1;
+
   for (let attempt = 0; attempt < MAX_LAYOUT_ATTEMPTS; attempt += 1) {
     const center = Math.floor(size / 2);
     const castle = { x: center, z: center };
     const { entrance } = pickRandomEdgeTile(size, random);
     const gate = getGridGate(entrance, size);
     const exit = pickCastleExit(castle, gate, size, random);
-    const layout = finalizeRoadGraph({
-      size,
-      castle,
-      exit,
-      gate,
-      entrance,
-      roadKeys: generateRoadPathWithTurns(
-        entrance,
-        gate,
-        exit,
-        size,
-        random,
-      ),
-    });
 
-    if (layout) {
+    if (!exit) {
+      continue;
+    }
+
+    const primary = finalizeRoadGraph(
+      syncLayoutFromPaths(size, castle, [
+        {
+          entrance,
+          gate,
+          exit,
+          roadKeys: generateRoadPathWithTurns(
+            entrance,
+            gate,
+            exit,
+            size,
+            random,
+          ),
+        },
+      ]),
+    );
+
+    if (!primary) {
+      continue;
+    }
+
+    let layout = primary;
+
+    while (layout.paths.length < maxPaths) {
+      const next = addMainLevelPath(layout, random);
+
+      if (!next) {
+        break;
+      }
+
+      layout = next;
+    }
+
+    if (!best || layout.paths.length > best.paths.length) {
+      best = layout;
+    }
+
+    if (layout.paths.length >= maxPaths) {
       return layout;
     }
+  }
+
+  if (best) {
+    return best;
   }
 
   const center = Math.floor(size / 2);
   const castle = { x: center, z: center };
   const { entrance } = pickRandomEdgeTile(size, random);
   const gate = getGridGate(entrance, size);
-  const exit = pickCastleExit(castle, gate, size, random);
+  const exit =
+    pickCastleExit(castle, gate, size, random) ??
+    getCastleNeighborCoords(castle, size)[0]!;
 
-  return {
-    size,
-    castle,
-    exit,
-    gate,
-    entrance,
-    roadKeys: generateRoadPathWithTurns(entrance, gate, exit, size, random),
-  };
+  return syncLayoutFromPaths(size, castle, [
+    {
+      entrance,
+      gate,
+      exit,
+      roadKeys: generateRoadPathWithTurns(entrance, gate, exit, size, random),
+    },
+  ]);
+}
+
+/** Index of the path that owns this tile, or -1 if none. */
+export function getPathIndexAtTile(
+  layout: WorldLayout,
+  x: number,
+  z: number,
+): number {
+  return layout.paths.findIndex(
+    (path) =>
+      path.roadKeys.has(coordKey({ x, z })) ||
+      (path.entrance.x === x && path.entrance.z === z) ||
+      (path.exit.x === x && path.exit.z === z),
+  );
 }
 
 /** Next-level preview: random odd-sized grid extending outward from the current level entrance. */
@@ -886,15 +1154,17 @@ function isPermittedPerimeterRoadTile(
   x: number,
   z: number,
 ) {
-  if (layout.gate.x === x && layout.gate.z === z) {
-    return true;
-  }
-
-  if (isOffGridCoord(layout.exit, layout.size)) {
-    const exitGate = getGridGate(layout.exit, layout.size);
-
-    if (exitGate.x === x && exitGate.z === z) {
+  for (const path of layout.paths) {
+    if (path.gate.x === x && path.gate.z === z) {
       return true;
+    }
+
+    if (isOffGridCoord(path.exit, layout.size)) {
+      const exitGate = getGridGate(path.exit, layout.size);
+
+      if (exitGate.x === x && exitGate.z === z) {
+        return true;
+      }
     }
   }
 
@@ -1067,6 +1337,24 @@ export type RoadTileFlow = {
 };
 
 export function getRoadTileFlows(layout: WorldLayout): RoadTileFlow[] {
+  if (layout.paths.length <= 1) {
+    return getRoadTileFlowsForPath(layout);
+  }
+
+  const byKey = new Map<string, RoadTileFlow>();
+
+  for (const path of layout.paths) {
+    const single = syncLayoutFromPaths(layout.size, layout.castle, [path]);
+
+    for (const flow of getRoadTileFlowsForPath(single)) {
+      byKey.set(`${flow.x}:${flow.z}`, flow);
+    }
+  }
+
+  return [...byKey.values()];
+}
+
+function getRoadTileFlowsForPath(layout: WorldLayout): RoadTileFlow[] {
   const path = traceRoadPathCoords(layout);
 
   if (!path) {
@@ -1099,10 +1387,14 @@ function traceEntranceToExitPath(
     return null;
   }
 
-  return {
-    ...layout,
-    roadKeys: new Set(path.map((coord) => coordKey(coord))),
-  };
+  return syncLayoutFromPaths(layout.size, layout.castle, [
+    {
+      entrance: layout.entrance,
+      gate: layout.gate,
+      exit: layout.exit,
+      roadKeys: new Set(path.map((coord) => coordKey(coord))),
+    },
+  ]);
 }
 
 function finalizeRoadGraph(layout: WorldLayout): WorldLayout | null {
@@ -1240,19 +1532,185 @@ function buildPreviewWorldLayout(
     random,
   );
 
-  return {
-    size,
-    castle,
-    exit,
-    gate,
-    entrance,
-    roadKeys,
-  };
+  return syncLayoutFromPaths(size, castle, [
+    {
+      entrance,
+      gate,
+      exit,
+      roadKeys,
+    },
+  ]);
 }
 
 export type PreviewWorldLayoutOptions = {
   entranceEdge: LevelEdge;
 };
+
+function isValidPreviewSinglePath(layout: WorldLayout): boolean {
+  if (!previewEntranceExitOppositeSides(layout)) {
+    return false;
+  }
+
+  if (!roadGraphIsSimplePath(layout)) {
+    return false;
+  }
+
+  if (!pathConnectsEntranceToExit(layout)) {
+    return false;
+  }
+
+  if (!previewRoadStaysInGrid(layout.roadKeys, layout)) {
+    return false;
+  }
+
+  return true;
+}
+
+/** True for level numbers 5, 10, 15, … (forked dual-entrance grids). */
+export function isForkSpawnLevel(levelNumber: number): boolean {
+  return levelNumber > 1 && levelNumber % 5 === 0;
+}
+
+function pickSecondaryForkEntranceEdge(
+  exitEdge: Edge,
+  primaryEntranceEdge: Edge,
+  random: () => number,
+): LevelEdge {
+  const candidates = ALL_EDGES.filter(
+    (edge) => edge !== exitEdge && edge !== primaryEntranceEdge,
+  );
+
+  return candidates[Math.floor(random() * candidates.length)]!;
+}
+
+/** Paths may only share the exit tile (Y-merge at the castle/exit). */
+function forkPathsOnlyShareExit(
+  roadKeysA: ReadonlySet<string>,
+  roadKeysB: ReadonlySet<string>,
+  exit: GridCoord,
+): boolean {
+  const exitKey = coordKey(exit);
+
+  if (!roadKeysA.has(exitKey) || !roadKeysB.has(exitKey)) {
+    return false;
+  }
+
+  for (const key of roadKeysA) {
+    if (key !== exitKey && roadKeysB.has(key)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function buildForkBranchDraft(
+  entranceEdge: LevelEdge,
+  exit: GridCoord,
+  castle: GridCoord,
+  size: number,
+  random: () => number,
+): WorldLayout {
+  const entrance = pickRandomPreviewEntrance(entranceEdge, size, random);
+  const gate = getGridGate(entrance, size);
+  const roadKeys = generatePreviewRoadKeys(
+    entrance,
+    gate,
+    exit,
+    size,
+    random,
+  );
+
+  return syncLayoutFromPaths(size, castle, [
+    {
+      entrance,
+      gate,
+      exit,
+      roadKeys,
+    },
+  ]);
+}
+
+/**
+ * Spawned-level layout with two entrances that meet at one shared exit
+ * (exit still snaps to the parent entrance for chaining).
+ */
+export function generateForkPreviewWorldLayout(
+  currentLayout: WorldLayout,
+  options: PreviewWorldLayoutOptions,
+  random: () => number = Math.random,
+): WorldLayout {
+  const connectionEdge = getEntranceEdge(
+    currentLayout.entrance,
+    currentLayout.size,
+  );
+  const exitEdge = getOppositeEdge(connectionEdge);
+
+  for (let attempt = 0; attempt < MAX_PREVIEW_ATTEMPTS; attempt += 1) {
+    const size = randomSpawnTerrainSize(random);
+    const exit = connectionCoordOnEdge(
+      exitEdge,
+      size,
+      pickRandomAlongEdge(size, random, SPAWN_ENTRANCE_CORNER_MARGIN),
+    );
+    const castle = getGridGate(exit, size);
+    const secondaryEntranceEdge = pickSecondaryForkEntranceEdge(
+      exitEdge,
+      options.entranceEdge,
+      random,
+    );
+
+    const finalizedA = finalizeRoadGraph(
+      buildForkBranchDraft(
+        options.entranceEdge,
+        exit,
+        castle,
+        size,
+        random,
+      ),
+    );
+    const finalizedB = finalizeRoadGraph(
+      buildForkBranchDraft(
+        secondaryEntranceEdge,
+        exit,
+        castle,
+        size,
+        random,
+      ),
+    );
+
+    if (!finalizedA || !finalizedB) {
+      continue;
+    }
+
+    if (
+      !isValidPreviewSinglePath(finalizedA) ||
+      !isValidPreviewSinglePath(finalizedB)
+    ) {
+      continue;
+    }
+
+    const pathA = finalizedA.paths[0]!;
+    const pathB = finalizedB.paths[0]!;
+
+    if (!forkPathsOnlyShareExit(pathA.roadKeys, pathB.roadKeys, exit)) {
+      continue;
+    }
+
+    return syncLayoutFromPaths(size, castle, [
+      {
+        ...pathA,
+        exit,
+      },
+      {
+        ...pathB,
+        exit,
+      },
+    ]);
+  }
+
+  return generatePreviewWorldLayout(currentLayout, options, random);
+}
 
 export function generatePreviewWorldLayout(
   currentLayout: WorldLayout,
@@ -1268,19 +1726,7 @@ export function generatePreviewWorldLayout(
       continue;
     }
 
-    if (!previewEntranceExitOppositeSides(layout)) {
-      continue;
-    }
-
-    if (!roadGraphIsSimplePath(layout)) {
-      continue;
-    }
-
-    if (!pathConnectsEntranceToExit(layout)) {
-      continue;
-    }
-
-    if (!previewRoadStaysInGrid(layout.roadKeys, layout)) {
+    if (!isValidPreviewSinglePath(layout)) {
       continue;
     }
 
@@ -1300,11 +1746,29 @@ export function isRoadTile(layout: WorldLayout, x: number, z: number) {
 }
 
 export function isEntranceTile(layout: WorldLayout, x: number, z: number) {
-  return layout.entrance.x === x && layout.entrance.z === z;
+  return layout.paths.some(
+    (path) => path.entrance.x === x && path.entrance.z === z,
+  );
 }
 
 export function isExitTile(layout: WorldLayout, x: number, z: number) {
-  return layout.exit.x === x && layout.exit.z === z;
+  return layout.paths.some((path) => path.exit.x === x && path.exit.z === z);
+}
+
+export function getPathAtExit(
+  layout: WorldLayout,
+  exit: GridCoord,
+): RoadPath | undefined {
+  return layout.paths.find(
+    (path) => path.exit.x === exit.x && path.exit.z === exit.z,
+  );
+}
+
+export function layoutForPath(
+  layout: WorldLayout,
+  path: RoadPath,
+): WorldLayout {
+  return syncLayoutFromPaths(layout.size, layout.castle, [path]);
 }
 
 /** Direction from the exit tile toward the castle (where stone blend sits). */

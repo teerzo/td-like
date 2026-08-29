@@ -1,5 +1,6 @@
 "use client";
 
+import type { GrassTilePointer } from "@/components/game/ground-plane";
 import { useCastleSpriteMap } from "@/lib/pixel-art/use-castle-sprite-maps";
 
 const ROCK_BLOCKS = [
@@ -13,17 +14,55 @@ export function RockModel({
   position = [0, 0, 0],
   rotation = 0,
   scale = 1,
+  onSelect,
 }: {
   position?: [number, number, number];
   rotation?: number;
   scale?: number;
+  onSelect?: (pointer: GrassTilePointer) => void;
 }) {
   const stoneMap = useCastleSpriteMap("stone");
+
+  function handleClick(event: {
+    stopPropagation: () => void;
+    clientX: number;
+    clientY: number;
+  }) {
+    if (!onSelect) {
+      return;
+    }
+
+    event.stopPropagation();
+    onSelect({ clientX: event.clientX, clientY: event.clientY });
+  }
+
+  function handlePointerOver(event: { stopPropagation: () => void }) {
+    if (!onSelect) {
+      return;
+    }
+
+    event.stopPropagation();
+    document.body.style.cursor = "pointer";
+  }
+
+  function handlePointerOut() {
+    if (!onSelect) {
+      return;
+    }
+
+    document.body.style.cursor = "auto";
+  }
 
   return (
     <group position={position} rotation={[0, rotation, 0]} scale={scale}>
       {ROCK_BLOCKS.map((block, index) => (
-        <mesh key={`rock-${index}`} position={block.position}>
+        <mesh
+          key={`rock-${index}`}
+          position={block.position}
+          onClick={handleClick}
+          onPointerOver={handlePointerOver}
+          onPointerOut={handlePointerOut}
+        >
           <boxGeometry args={block.size} />
           <meshStandardMaterial map={stoneMap} roughness={0.95} metalness={0} />
         </mesh>

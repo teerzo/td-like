@@ -13,8 +13,11 @@ export const DIRT_TILE_SIZE = TILE_SIZE;
 /** Toggle off temporarily while tuning ground UVs/textures. */
 export const SHOW_DIRT_TILES = true;
 
-/** Toggle off temporarily while tuning the scene. */
-export const SHOW_TREES = false;
+/** Toggle terrain props (trees, rocks, lakes, mountains) on level grids. */
+export const SHOW_TERRAIN_DECOR = true;
+
+/** @deprecated Use SHOW_TERRAIN_DECOR */
+export const SHOW_TREES = SHOW_TERRAIN_DECOR;
 
 export type TerrainTile = {
   key: string;

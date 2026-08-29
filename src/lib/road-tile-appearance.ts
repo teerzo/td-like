@@ -48,17 +48,27 @@ function getRoadNeighborKey(layout: WorldLayout, x: number, z: number) {
   return key;
 }
 
-/** Straight ns/ew sprite aligned with the entrance corridor. */
+/** Straight ns/ew sprite aligned with the entrance corridor for a tile. */
 export function getEntranceStraightSprite(
   layout: WorldLayout,
+  x = layout.entrance.x,
+  z = layout.entrance.z,
 ): DirtRoadSpriteId {
-  const edge = getEntranceEdge(layout.entrance, layout.size);
+  const path =
+    layout.paths.find(
+      (entry) =>
+        (entry.entrance.x === x && entry.entrance.z === z) ||
+        (entry.gate.x === x && entry.gate.z === z),
+    ) ?? layout.paths[0]!;
+  const edge = getEntranceEdge(path.entrance, layout.size);
 
   return edge === "east" || edge === "west" ? "ew" : "ns";
 }
 
 function isEntranceGateTile(layout: WorldLayout, x: number, z: number) {
-  return layout.gate.x === x && layout.gate.z === z;
+  return layout.paths.some(
+    (path) => path.gate.x === x && path.gate.z === z,
+  );
 }
 
 /** Matches the straight ns/ew dirt road sprites. */
@@ -82,7 +92,7 @@ export function getDirtRoadAppearance(
   z: number,
 ): DirtRoadAppearance {
   if (isEntranceTile(layout, x, z) || isEntranceGateTile(layout, x, z)) {
-    return { sprite: getEntranceStraightSprite(layout) };
+    return { sprite: getEntranceStraightSprite(layout, x, z) };
   }
 
   const neighbors = getRoadNeighborKey(layout, x, z);

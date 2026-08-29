@@ -1,5 +1,20 @@
 export { CastleModel } from "@/components/game/models/castle";
 export { DirtRoadTile } from "@/components/game/models/dirt-road-tile";
+export {
+  FarmWindmillModel,
+  farmWindmillVariant,
+} from "@/components/game/models/farm-windmill";
+export {
+  FertileDirtModel,
+  fertileDirtVariant,
+} from "@/components/game/models/fertile-dirt";
+export { GoldMineModel, goldMineVariant } from "@/components/game/models/gold-mine";
+export { IronMineModel, ironMineVariant } from "@/components/game/models/iron-mine";
+export {
+  HillTile,
+  hillSelectHandler,
+  hillVariant,
+} from "@/components/game/models/hill-tile";
 export { MountainModel, mountainVariant } from "@/components/game/models/mountain";
 export { PondModel, pondVariant } from "@/components/game/models/pond";
 export { RockModel, rockVariant } from "@/components/game/models/rock";
