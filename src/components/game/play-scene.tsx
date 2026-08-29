@@ -10,6 +10,7 @@ import {
   type CastleArmyMenuState,
 } from "@/components/game/castle-army-menu";
 import { DayNightCycle } from "@/components/game/day-night-cycle";
+import { DaySkyClouds } from "@/components/game/day-sky-clouds";
 import { DebugHitbox } from "@/components/game/debug-hitbox";
 import { WorldMenuProjector } from "@/components/game/world-menu-projector";
 import { EnemyWalker } from "@/components/game/enemy-walker";
@@ -1489,6 +1490,7 @@ export default function PlayScene() {
       <Canvas className="h-full w-full" camera={{ position: [13, 16, 13], fov: 45 }}>
         <SceneRaycastGate enabled={perf.raycast} />
         <DayNightCycle isNight={isNight} />
+        <DaySkyClouds isNight={isNight} />
         {perf.previewLevels
           ? spawnedLevels.map((chunk, index) => {
               const isNextPreview = index === spawnedLevels.length - 1;
