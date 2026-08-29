@@ -1,6 +1,7 @@
 "use client";
 
 import type { GrassTilePointer } from "@/components/game/ground-plane";
+import { DebugHitbox } from "@/components/game/debug-hitbox";
 import {
   PixelTextureMaterial,
 } from "@/lib/pixel-art/use-pixel-texture";
@@ -52,6 +53,13 @@ export function TreeModel({
 
   return (
     <group position={position} rotation={[0, rotation, 0]} scale={scale}>
+      {onSelect ? (
+        <DebugHitbox
+          size={[FOLIAGE_SIZE * 1.1, TRUNK_HEIGHT + FOLIAGE_SIZE, FOLIAGE_SIZE * 1.1]}
+          position={[0, (TRUNK_HEIGHT + FOLIAGE_SIZE) / 2, 0]}
+          color="#4ade80"
+        />
+      ) : null}
       <mesh
         position={[0, TRUNK_HEIGHT / 2, 0]}
         onClick={handleClick}

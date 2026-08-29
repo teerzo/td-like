@@ -5,6 +5,7 @@ import { useRef } from "react";
 import type { Group } from "three";
 
 import type { GrassTilePointer } from "@/components/game/ground-plane";
+import { DebugHitbox } from "@/components/game/debug-hitbox";
 import { useCastleSpriteMap } from "@/lib/pixel-art/use-castle-sprite-maps";
 
 export function FarmWindmillModel({
@@ -68,6 +69,9 @@ export function FarmWindmillModel({
 
   return (
     <group position={position} rotation={[0, rotation, 0]} scale={scale}>
+      {onSelect ? (
+        <DebugHitbox size={[0.9, 1.2, 0.9]} position={[0, 0.6, 0]} color="#f59e0b" />
+      ) : null}
       <mesh position={[-0.12, 0.22, 0.05]} {...pointerProps}>
         <boxGeometry args={[0.48, 0.44, 0.4]} />
         <meshStandardMaterial map={woodMap} roughness={0.9} metalness={0} />

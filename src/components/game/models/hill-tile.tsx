@@ -1,6 +1,7 @@
 "use client";
 
 import type { GrassTilePointer } from "@/components/game/ground-plane";
+import { DebugHitbox } from "@/components/game/debug-hitbox";
 import type { GlobalGridCoord } from "@/lib/global-grid";
 import { useGrassSpriteMap } from "@/lib/pixel-art/use-grass-sprite-maps";
 import { grassTextureForTile } from "@/lib/pixel-art/grass-sprites";
@@ -65,6 +66,13 @@ export function HillTile({
 
   return (
     <group position={position} rotation={[0, rotation, 0]} scale={scale}>
+      {onSelect ? (
+        <DebugHitbox
+          size={[HILL_FOOTPRINT, height, HILL_FOOTPRINT]}
+          position={[0, height / 2, 0]}
+          color="#86efac"
+        />
+      ) : null}
       <mesh
         position={[0, height / 2, 0]}
         castShadow

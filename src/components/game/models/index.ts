@@ -8,6 +8,7 @@ export {
   FertileDirtModel,
   fertileDirtVariant,
 } from "@/components/game/models/fertile-dirt";
+export { OreDepositModel, oreDepositVariant } from "@/components/game/models/ore-deposit";
 export { GoldMineModel, goldMineVariant } from "@/components/game/models/gold-mine";
 export { IronMineModel, ironMineVariant } from "@/components/game/models/iron-mine";
 export {

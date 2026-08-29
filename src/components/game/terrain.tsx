@@ -20,6 +20,8 @@ import {
   goldMineVariant,
   IronMineModel,
   ironMineVariant,
+  OreDepositModel,
+  oreDepositVariant,
   MountainModel,
   mountainVariant,
   PondModel,
@@ -81,6 +83,10 @@ type TerrainProps = {
   goldMine?: GridCoord | null;
   /** Optional main-grid iron mine local tile. */
   ironMine?: GridCoord | null;
+  /** Whether a gold mine building has been constructed. */
+  hasGoldMine?: boolean;
+  /** Whether an iron mine building has been constructed. */
+  hasIronMine?: boolean;
   /** Optional main-grid fertile dirt local tile. */
   fertileDirt?: GridCoord | null;
   /** Whether a farm has been built on the fertile tile. */
@@ -290,6 +296,7 @@ function TerrainDecorModels({
               position={[x + variant.offsetX, 0, z + variant.offsetZ]}
               rotation={variant.rotation}
               scale={variant.scale}
+              seed={variant.seed}
             />
           );
         }
@@ -340,6 +347,8 @@ export function Terrain({
   showGrass = true,
   goldMine = null,
   ironMine = null,
+  hasGoldMine = false,
+  hasIronMine = false,
   fertileDirt = null,
   hasFarm = false,
   clearedObstacleKeys,
@@ -428,45 +437,61 @@ export function Terrain({
     if (fertileDirt) {
       keys.add(`${fertileDirt.x}:${fertileDirt.z}`);
     }
+    if (goldMine) {
+      keys.add(`${goldMine.x}:${goldMine.z}`);
+    }
+    if (ironMine) {
+      keys.add(`${ironMine.x}:${ironMine.z}`);
+    }
 
     return keys;
-  }, [layout, decor, fertileDirt]);
+  }, [layout, decor, fertileDirt, goldMine, ironMine]);
 
   const goldMineWorld = useMemo(() => {
     if (!goldMine) {
       return null;
     }
 
-    const { x, z } = globalTileWorldPosition(
-      origin.gx + goldMine.x,
-      origin.gz + goldMine.z,
-    );
-    const variant = goldMineVariant(goldMine.x, goldMine.z);
+    const gx = origin.gx + goldMine.x;
+    const gz = origin.gz + goldMine.z;
+    const { x, z } = globalTileWorldPosition(gx, gz);
+    const depositVariant = oreDepositVariant(goldMine.x, goldMine.z);
+    const mineVariant = goldMineVariant(goldMine.x, goldMine.z);
 
     return {
+      gx,
+      gz,
       position: [x, 0, z] as [number, number, number],
-      rotation: variant.rotation,
-      scale: variant.scale,
+      depositRotation: depositVariant.rotation,
+      depositScale: depositVariant.scale,
+      mineRotation: mineVariant.rotation,
+      mineScale: mineVariant.scale,
+      selected: selectedTileKey === globalCoordKey(gx, gz),
     };
-  }, [goldMine, origin]);
+  }, [goldMine, origin, selectedTileKey]);
 
   const ironMineWorld = useMemo(() => {
     if (!ironMine) {
       return null;
     }
 
-    const { x, z } = globalTileWorldPosition(
-      origin.gx + ironMine.x,
-      origin.gz + ironMine.z,
-    );
-    const variant = ironMineVariant(ironMine.x, ironMine.z);
+    const gx = origin.gx + ironMine.x;
+    const gz = origin.gz + ironMine.z;
+    const { x, z } = globalTileWorldPosition(gx, gz);
+    const depositVariant = oreDepositVariant(ironMine.x, ironMine.z);
+    const mineVariant = ironMineVariant(ironMine.x, ironMine.z);
 
     return {
+      gx,
+      gz,
       position: [x, 0, z] as [number, number, number],
-      rotation: variant.rotation,
-      scale: variant.scale,
+      depositRotation: depositVariant.rotation,
+      depositScale: depositVariant.scale,
+      mineRotation: mineVariant.rotation,
+      mineScale: mineVariant.scale,
+      selected: selectedTileKey === globalCoordKey(gx, gz),
     };
-  }, [ironMine, origin]);
+  }, [ironMine, origin, selectedTileKey]);
 
   const fertileWorld = useMemo(() => {
     if (!fertileDirt) {
@@ -565,17 +590,45 @@ export function Terrain({
         />
       ) : null}
       {goldMineWorld ? (
+        <OreDepositModel
+          kind="gold"
+          position={goldMineWorld.position}
+          rotation={goldMineWorld.depositRotation}
+          scale={goldMineWorld.depositScale}
+          selected={goldMineWorld.selected && !hasGoldMine}
+          onSelect={hillSelectHandler(
+            goldMineWorld.gx,
+            goldMineWorld.gz,
+            onSelectTile,
+          )}
+        />
+      ) : null}
+      {goldMineWorld && hasGoldMine ? (
         <GoldMineModel
           position={goldMineWorld.position}
-          rotation={goldMineWorld.rotation}
-          scale={goldMineWorld.scale}
+          rotation={goldMineWorld.mineRotation}
+          scale={goldMineWorld.mineScale}
         />
       ) : null}
       {ironMineWorld ? (
+        <OreDepositModel
+          kind="iron"
+          position={ironMineWorld.position}
+          rotation={ironMineWorld.depositRotation}
+          scale={ironMineWorld.depositScale}
+          selected={ironMineWorld.selected && !hasIronMine}
+          onSelect={hillSelectHandler(
+            ironMineWorld.gx,
+            ironMineWorld.gz,
+            onSelectTile,
+          )}
+        />
+      ) : null}
+      {ironMineWorld && hasIronMine ? (
         <IronMineModel
           position={ironMineWorld.position}
-          rotation={ironMineWorld.rotation}
-          scale={ironMineWorld.scale}
+          rotation={ironMineWorld.mineRotation}
+          scale={ironMineWorld.mineScale}
         />
       ) : null}
       {fertileWorld ? (

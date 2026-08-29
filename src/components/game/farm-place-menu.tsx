@@ -1,7 +1,13 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
-import { FARM_COST } from "@/lib/fertile-farm";
+import { forwardRef } from "react";
+
+import {
+  BuildActionMenu,
+  BuildIconPreview,
+} from "@/components/game/build-action-menu";
+import { FarmWindmillModel } from "@/components/game/models";
+import { canAffordFarm, FARM_COST } from "@/lib/fertile-farm";
 
 export type FarmPlaceMenuState = {
   gx: number;
@@ -13,51 +19,42 @@ export type FarmPlaceMenuState = {
 type FarmPlaceMenuProps = {
   menu: FarmPlaceMenuState;
   gold: number;
+  iron: number;
+  wood: number;
   onBuild: () => void;
   onClose: () => void;
 };
 
-export function FarmPlaceMenu({
-  menu,
-  gold,
-  onBuild,
-  onClose,
-}: FarmPlaceMenuProps) {
-  const canAfford = gold >= FARM_COST;
+export const FarmPlaceMenu = forwardRef<HTMLDivElement, FarmPlaceMenuProps>(
+  function FarmPlaceMenu({ menu, gold, iron, wood, onBuild, onClose }, ref) {
+    const canAfford = canAffordFarm({ gold, iron, wood });
 
-  return (
-    <>
-      <button
-        type="button"
-        aria-label="Close farm menu"
-        className="pointer-events-auto absolute inset-0 z-20 cursor-default bg-transparent"
-        onClick={onClose}
+    return (
+      <BuildActionMenu
+        ref={ref}
+        clientX={menu.clientX}
+        clientY={menu.clientY}
+        closeLabel="Close farm menu"
+        onClose={onClose}
+        actions={[
+          {
+            id: "farm",
+            label: "Build Farm",
+            costs: [
+              { resource: "gold", amount: FARM_COST.gold },
+              { resource: "iron", amount: FARM_COST.iron },
+              { resource: "wood", amount: FARM_COST.wood },
+            ],
+            canAfford,
+            preview: (
+              <BuildIconPreview cameraPosition={[1.6, 1.5, 1.6]}>
+                <FarmWindmillModel position={[0, -0.15, 0]} scale={0.85} />
+              </BuildIconPreview>
+            ),
+            onSelect: onBuild,
+          },
+        ]}
       />
-      <div
-        className="pointer-events-auto absolute z-30 w-56 -translate-x-1/2 -translate-y-full rounded-2xl border border-amber-400/45 bg-gradient-to-br from-[#2a2110]/95 to-[#12151c]/95 p-4 shadow-[0_8px_28px_rgba(0,0,0,0.45)] backdrop-blur-md"
-        style={{ left: menu.clientX, top: menu.clientY - 12 }}
-        role="dialog"
-        aria-label="Build farm"
-      >
-        <p className="font-heading text-base font-semibold text-amber-100">
-          Fertile Dirt
-        </p>
-        <p className="mt-1 text-xs leading-relaxed text-amber-200/70">
-          Build a farm with a windmill to grow food.
-        </p>
-        <Button
-          className="mt-3 w-full"
-          disabled={!canAfford}
-          onClick={onBuild}
-        >
-          Build Farm — {FARM_COST}G
-        </Button>
-        {!canAfford ? (
-          <p className="mt-2 text-center text-[11px] text-amber-200/55">
-            Need {FARM_COST - gold} more gold
-          </p>
-        ) : null}
-      </div>
-    </>
-  );
-}
+    );
+  },
+);

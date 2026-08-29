@@ -5,13 +5,29 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 
+import {
+  CastleArmyMenu,
+  type CastleArmyMenuState,
+} from "@/components/game/castle-army-menu";
+import { DayNightCycle } from "@/components/game/day-night-cycle";
+import { DebugHitbox } from "@/components/game/debug-hitbox";
+import { WorldMenuProjector } from "@/components/game/world-menu-projector";
 import { EnemyWalker } from "@/components/game/enemy-walker";
 import { EdgeGateMenu, EDGE_GATE_COST, type EdgeGateMenuState } from "@/components/game/edge-gate-menu";
 import { EdgeGateModel } from "@/components/game/edge-gate-model";
 import {
+  computeWaveFoodReward,
+  WaveClearModal,
+  type WaveClearModalState,
+} from "@/components/game/wave-clear-modal";
+import {
   FarmPlaceMenu,
   type FarmPlaceMenuState,
 } from "@/components/game/farm-place-menu";
+import {
+  MinePlaceMenu,
+  type MinePlaceMenuState,
+} from "@/components/game/mine-place-menu";
 import { FogOfWarClouds } from "@/components/game/fog-of-war-clouds";
 import { Projectile } from "@/components/game/projectile";
 import { CastleModel, TowerModel } from "@/components/game/models";
@@ -30,8 +46,11 @@ import { ResourcesHud } from "@/components/game/resources-hud";
 import { Terrain } from "@/components/game/terrain";
 import { TowerAttackRadiusPreview } from "@/components/game/tower-attack-radius-preview";
 import { TowerPlaceMenu, type TowerPlaceMenuState } from "@/components/game/tower-place-menu";
+import {
+  TowerManageMenu,
+  type TowerManageMenuState,
+} from "@/components/game/tower-manage-menu";
 import { LevelHud } from "@/components/game/level-hud";
-import { useRegisterPlayDebugToolbar } from "@/components/game/play-debug-toolbar";
 import { usePlayPerfFlags } from "@/components/game/play-perf-toggles";
 import {
   TowerDefenseSystem,
@@ -53,12 +72,21 @@ import {
 import { getEnemiesInAoe, getEffectiveAttackRangeTiles } from "@/lib/tower-combat";
 import {
   computeDamageTaken,
-  ENEMY_TYPE_IDS,
   getEnemyStats,
   type EnemyTypeId,
 } from "@/lib/enemy-types";
 import {
+  ARMY_UNIT_COSTS,
+  ARMY_UNIT_IDS,
+  armyTotal,
+  canAffordUnit,
+  createEmptyArmy,
+  type ArmyRoster,
+  type ArmyUnitId,
+} from "@/lib/army-types";
+import {
   BUILD_PLOT_SIZE,
+  canAffordFarm,
   collectBuildPlotTiles,
   computeBuildPlotOrigin,
   FARM_COST,
@@ -69,8 +97,10 @@ import {
   type BuildPlot,
 } from "@/lib/fertile-farm";
 import {
+  GOLD_MINE_COST,
   GOLD_MINE_INCOME,
   GOLD_MINE_INTERVAL_MS,
+  IRON_MINE_COST,
   IRON_MINE_INCOME,
   IRON_MINE_INTERVAL_MS,
   pickGoldMineTile,
@@ -88,7 +118,14 @@ import {
   TREE_CLEAR_WOOD,
 } from "@/lib/resources";
 import { collectHillTiles, generateTerrainDecor } from "@/lib/terrain-decor";
-import { getTowerStats, STARTING_GOLD, type TowerTypeId } from "@/lib/tower-types";
+import {
+  getTowerSellRefund,
+  getTowerStats,
+  getTowerStatsAtLevel,
+  getTowerUpgradeCost,
+  STARTING_GOLD,
+  type TowerTypeId,
+} from "@/lib/tower-types";
 import {
   ENABLE_MAIN_MULTI_PATH,
   generateForkPreviewWorldLayout,
@@ -111,6 +148,8 @@ const MAX_SPAWN_ATTEMPTS = 64;
 
 const PREVIEW_LEVEL_OPACITY = 0.5;
 const AUTO_SPAWN_INTERVAL_MS = 1200;
+/** Delay between each mirrored inbound unit spawn. */
+const WAVE_STAGGER_MS = 900;
 
 type PlacedLevel = {
   id: number;
@@ -141,6 +180,8 @@ function LevelChunk({
   showGrass = true,
   goldMine = null,
   ironMine = null,
+  hasGoldMine = false,
+  hasIronMine = false,
   fertileDirt = null,
   hasFarm = false,
   clearedObstacleKeys,
@@ -157,6 +198,8 @@ function LevelChunk({
   showGrass?: boolean;
   goldMine?: GridCoord | null;
   ironMine?: GridCoord | null;
+  hasGoldMine?: boolean;
+  hasIronMine?: boolean;
   fertileDirt?: GridCoord | null;
   hasFarm?: boolean;
   clearedObstacleKeys?: ReadonlySet<string>;
@@ -173,6 +216,8 @@ function LevelChunk({
       showGrass={showGrass}
       goldMine={goldMine}
       ironMine={ironMine}
+      hasGoldMine={hasGoldMine}
+      hasIronMine={hasIronMine}
       fertileDirt={fertileDirt}
       hasFarm={hasFarm}
       clearedObstacleKeys={clearedObstacleKeys}
@@ -239,29 +284,53 @@ function GroundOrbitControls({
 
 export default function PlayScene() {
   const perf = usePlayPerfFlags();
+  /** Day = manage land/army; night = inbound raid until the wave is cleared. */
+  const [isNight, setIsNight] = useState(false);
+  const isNightRef = useRef(false);
+  /** True after Send Attack has queued its counter-wave (avoids day flicker). */
+  const nightWaveActiveRef = useRef(false);
+  /** Inbound units still waiting to spawn (stagger queue). */
+  const waveSpawnRemainingRef = useRef(0);
+  const waveSpawnTimeoutsRef = useRef<number[]>([]);
+  const nightKillsRef = useRef<Partial<Record<EnemyTypeId, number>>>({});
+  const [waveClearModal, setWaveClearModal] =
+    useState<WaveClearModalState | null>(null);
   const [mainLayout, setMainLayout] = useState(() => generateWorldLayout());
   const [revealedPathCount, setRevealedPathCount] = useState(
     ENABLE_MAIN_MULTI_PATH ? 0 : 1,
   );
   const containerRef = useRef<HTMLDivElement>(null);
+  const menuAnchorRef = useRef<HTMLDivElement>(null);
   const registryRef = useRef(new GlobalTileRegistry());
   const [spawnedLevels, setSpawnedLevels] = useState<PlacedLevel[]>([]);
   /** 0 = main grid; N = enemies spawn from spawnedLevels[N - 1] entrance. */
   const [activeLevelIndex, setActiveLevelIndex] = useState(0);
+  /** Raid / wave level shown in the HUD; increments when a night wave is cleared. */
+  const [waveLevel, setWaveLevel] = useState(1);
   const [selectedGrassTile, setSelectedGrassTile] =
     useState<GlobalGridCoord | null>(null);
   const [towers, setTowers] = useState<PlacedTower[]>([]);
   const [towerPlaceMenu, setTowerPlaceMenu] =
     useState<TowerPlaceMenuState | null>(null);
+  const [towerManageMenu, setTowerManageMenu] =
+    useState<TowerManageMenuState | null>(null);
   const [edgeGateMenu, setEdgeGateMenu] = useState<EdgeGateMenuState | null>(
     null,
   );
   const [farmPlaceMenu, setFarmPlaceMenu] = useState<FarmPlaceMenuState | null>(
     null,
   );
+  const [minePlaceMenu, setMinePlaceMenu] = useState<MinePlaceMenuState | null>(
+    null,
+  );
+  const [farms, setFarms] = useState<{ gx: number; gz: number }[]>([]);
+  const [builtGoldMine, setBuiltGoldMine] = useState(false);
+  const [builtIronMine, setBuiltIronMine] = useState(false);
   const [obstacleClearMenu, setObstacleClearMenu] =
     useState<ObstacleClearMenuState | null>(null);
-  const [farms, setFarms] = useState<{ gx: number; gz: number }[]>([]);
+  const [armyMenu, setArmyMenu] = useState<CastleArmyMenuState | null>(null);
+  const [army, setArmy] = useState<ArmyRoster>(() => createEmptyArmy());
+  const [raidStatus, setRaidStatus] = useState<string | null>(null);
   const [unlockedBuildEdges, setUnlockedBuildEdges] = useState<LevelEdge[]>([]);
   const [buildPlots, setBuildPlots] = useState<BuildPlot[]>([]);
   const [clearedObstacleKeys, setClearedObstacleKeys] = useState<Set<string>>(
@@ -269,7 +338,8 @@ export default function PlayScene() {
   );
   const [enemies, setEnemies] = useState<PlacedEnemy[]>([]);
   const [projectiles, setProjectiles] = useState<FiredProjectile[]>([]);
-  const [autoSpawnEnemies, setAutoSpawnEnemies] = useState(true);
+  /** Debug: continuous spawns during night (normal nights use Send Attack waves). */
+  const [autoSpawnEnemies, setAutoSpawnEnemies] = useState(false);
   const [gold, setGold] = useState(STARTING_GOLD);
   const [iron, setIron] = useState(STARTING_IRON);
   const [wood, setWood] = useState(STARTING_WOOD);
@@ -392,7 +462,10 @@ export default function PlayScene() {
   }, [selectedGrassTile, towers]);
 
   const selectedTowerStats = useMemo(
-    () => (selectedTower ? getTowerStats(selectedTower.typeId) : null),
+    () =>
+      selectedTower
+        ? getTowerStatsAtLevel(selectedTower.typeId, selectedTower.level ?? 1)
+        : null,
     [selectedTower],
   );
 
@@ -407,11 +480,81 @@ export default function PlayScene() {
     );
   }, [selectedTower, selectedTowerStats]);
 
+  const anchoredMenuWorldPosition = useMemo(():
+    | [number, number, number]
+    | null => {
+    if (towerPlaceMenu) {
+      const { x, z } = globalTileWorldPosition(
+        towerPlaceMenu.gx,
+        towerPlaceMenu.gz,
+      );
+      return [x, 0.45, z];
+    }
+
+    if (towerManageMenu) {
+      const tower = towers.find((entry) => entry.id === towerManageMenu.towerId);
+      if (!tower) {
+        return null;
+      }
+      const { x, z } = globalTileWorldPosition(tower.gx, tower.gz);
+      return [x, (tower.groundY ?? 0) + 0.55, z];
+    }
+
+    if (farmPlaceMenu) {
+      const { x, z } = globalTileWorldPosition(
+        farmPlaceMenu.gx,
+        farmPlaceMenu.gz,
+      );
+      return [x, 0.35, z];
+    }
+
+    if (minePlaceMenu) {
+      const { x, z } = globalTileWorldPosition(
+        minePlaceMenu.gx,
+        minePlaceMenu.gz,
+      );
+      return [x, 0.35, z];
+    }
+
+    if (obstacleClearMenu) {
+      const { x, z } = globalTileWorldPosition(
+        obstacleClearMenu.gx,
+        obstacleClearMenu.gz,
+      );
+      return [x, 0.4, z];
+    }
+
+    if (edgeGateMenu) {
+      const tile = getEdgeGateTile(edgeGateMenu.edge, mainLayout.size);
+      const { x, z } = globalTileWorldPosition(
+        mainOrigin.gx + tile.x,
+        mainOrigin.gz + tile.z,
+      );
+      return [x, 0.45, z];
+    }
+
+    return null;
+  }, [
+    towerPlaceMenu,
+    towerManageMenu,
+    farmPlaceMenu,
+    minePlaceMenu,
+    obstacleClearMenu,
+    edgeGateMenu,
+    towers,
+    mainLayout.size,
+    mainOrigin.gx,
+    mainOrigin.gz,
+  ]);
+
   function closeAllMenus() {
     setTowerPlaceMenu(null);
+    setTowerManageMenu(null);
     setEdgeGateMenu(null);
     setFarmPlaceMenu(null);
+    setMinePlaceMenu(null);
     setObstacleClearMenu(null);
+    setArmyMenu(null);
   }
 
   function handleSelectGrassTile(
@@ -431,9 +574,37 @@ export default function PlayScene() {
       coord.gx === mainOrigin.gx + fertileDirtTile.x &&
       coord.gz === mainOrigin.gz + fertileDirtTile.z;
 
-    if (onGoldMine || onIronMine) {
+    if (onGoldMine) {
       closeAllMenus();
-      setSelectedGrassTile(null);
+      setSelectedGrassTile(coord);
+      if (builtGoldMine) {
+        return;
+      }
+      const pos = menuPointer(pointer, containerRef.current);
+      setMinePlaceMenu({
+        kind: "gold",
+        gx: coord.gx,
+        gz: coord.gz,
+        clientX: pos.clientX,
+        clientY: pos.clientY,
+      });
+      return;
+    }
+
+    if (onIronMine) {
+      closeAllMenus();
+      setSelectedGrassTile(coord);
+      if (builtIronMine) {
+        return;
+      }
+      const pos = menuPointer(pointer, containerRef.current);
+      setMinePlaceMenu({
+        kind: "iron",
+        gx: coord.gx,
+        gz: coord.gz,
+        clientX: pos.clientX,
+        clientY: pos.clientY,
+      });
       return;
     }
 
@@ -470,15 +641,28 @@ export default function PlayScene() {
       return;
     }
 
-    const hasTower = towers.some(
-      (tower) => tower.gx === coord.gx && tower.gz === coord.gz,
+    const tower = towers.find(
+      (entry) => entry.gx === coord.gx && entry.gz === coord.gz,
     );
 
-    if (hasTower) {
+    if (tower) {
       closeAllMenus();
       const isDeselect =
         selectedGrassTile?.gx === coord.gx && selectedGrassTile?.gz === coord.gz;
-      setSelectedGrassTile(isDeselect ? null : coord);
+      if (isDeselect) {
+        setSelectedGrassTile(null);
+        return;
+      }
+
+      setSelectedGrassTile(coord);
+      const pos = menuPointer(pointer, containerRef.current);
+      setTowerManageMenu({
+        towerId: tower.id,
+        typeId: tower.typeId,
+        level: tower.level ?? 1,
+        clientX: pos.clientX,
+        clientY: pos.clientY,
+      });
       return;
     }
 
@@ -521,6 +705,18 @@ export default function PlayScene() {
         return;
       }
 
+      const onGoldDeposit =
+        goldMineTile &&
+        gx === mainOrigin.gx + goldMineTile.x &&
+        gz === mainOrigin.gz + goldMineTile.z;
+      const onIronDeposit =
+        ironMineTile &&
+        gx === mainOrigin.gx + ironMineTile.x &&
+        gz === mainOrigin.gz + ironMineTile.z;
+      if (onGoldDeposit || onIronDeposit) {
+        return;
+      }
+
       const id = nextTowerId.current;
       nextTowerId.current += 1;
       const hill = hillTilesByKey.get(globalCoordKey(gx, gz));
@@ -532,6 +728,7 @@ export default function PlayScene() {
           gx,
           gz,
           typeId,
+          level: 1,
           onHill: !!hill,
           groundY: hill?.height ?? 0,
         },
@@ -542,12 +739,50 @@ export default function PlayScene() {
     setTowerPlaceMenu(null);
   }
 
+  function handleUpgradeTower(towerId: number) {
+    const tower = towers.find((entry) => entry.id === towerId);
+    if (!tower) {
+      return;
+    }
+
+    const level = tower.level ?? 1;
+    const cost = getTowerUpgradeCost(tower.typeId, level);
+    if (cost === null || gold < cost) {
+      return;
+    }
+
+    setGold((current) => current - cost);
+    setTowers((current) =>
+      current.map((entry) =>
+        entry.id === towerId ? { ...entry, level: level + 1 } : entry,
+      ),
+    );
+    setTowerManageMenu((current) =>
+      current && current.towerId === towerId
+        ? { ...current, level: level + 1 }
+        : current,
+    );
+  }
+
+  function handleDestroyTower(towerId: number) {
+    const tower = towers.find((entry) => entry.id === towerId);
+    if (!tower) {
+      return;
+    }
+
+    const refund = getTowerSellRefund(tower.typeId, tower.level ?? 1);
+    setGold((current) => current + refund);
+    setTowers((current) => current.filter((entry) => entry.id !== towerId));
+    setTowerManageMenu(null);
+    setSelectedGrassTile(null);
+  }
+
   function handleBuildFarm() {
     if (!farmPlaceMenu || !fertileDirtTile) {
       return;
     }
 
-    if (gold < FARM_COST) {
+    if (!canAffordFarm({ gold, iron, wood })) {
       return;
     }
 
@@ -556,10 +791,41 @@ export default function PlayScene() {
       return;
     }
 
-    setGold((current) => current - FARM_COST);
+    setGold((current) => current - FARM_COST.gold);
+    setIron((current) => current - FARM_COST.iron);
+    setWood((current) => current - FARM_COST.wood);
     setFarms((current) => [...current, { gx, gz }]);
     setFarmPlaceMenu(null);
     setSelectedGrassTile({ gx, gz });
+  }
+
+  function handleBuildMine() {
+    if (!minePlaceMenu) {
+      return;
+    }
+
+    const cost =
+      minePlaceMenu.kind === "gold" ? GOLD_MINE_COST : IRON_MINE_COST;
+    if (gold < cost) {
+      return;
+    }
+
+    if (minePlaceMenu.kind === "gold") {
+      if (builtGoldMine) {
+        return;
+      }
+      setGold((current) => current - cost);
+      setBuiltGoldMine(true);
+    } else {
+      if (builtIronMine) {
+        return;
+      }
+      setGold((current) => current - cost);
+      setBuiltIronMine(true);
+    }
+
+    setMinePlaceMenu(null);
+    setSelectedGrassTile({ gx: minePlaceMenu.gx, gz: minePlaceMenu.gz });
   }
 
   function handleClearObstacle() {
@@ -668,10 +934,10 @@ export default function PlayScene() {
     Math.max(0, levelChain.length - 1),
   );
 
-  function handleSpawnEnemy(typeId: EnemyTypeId) {
+  function tryCreateEnemy(typeId: EnemyTypeId): PlacedEnemy | null {
     const combatLevel = levelChain[combatLevelIndex];
     if (!combatLevel) {
-      return;
+      return null;
     }
 
     const pathCount =
@@ -680,7 +946,7 @@ export default function PlayScene() {
         : combatLevel.layout.paths.length;
 
     if (pathCount < 1) {
-      return;
+      return null;
     }
 
     const pathIndex = Math.floor(Math.random() * pathCount);
@@ -692,29 +958,40 @@ export default function PlayScene() {
     );
 
     if (!path || path.length < 2) {
-      return;
+      return null;
     }
 
     const stats = getEnemyStats(typeId);
     const id = nextEnemyId.current;
     nextEnemyId.current += 1;
-    setEnemies((current) => [
-      ...current,
-      {
-        id,
-        typeId: stats.id,
-        path,
-        hp: stats.health,
-        maxHp: stats.health,
-      },
-    ]);
+    return {
+      id,
+      typeId: stats.id,
+      path,
+      hp: stats.health,
+      maxHp: stats.health,
+    };
+  }
+
+  function handleSpawnEnemy(typeId: EnemyTypeId) {
+    // Combat waves only run at night.
+    if (!isNightRef.current) {
+      return;
+    }
+
+    const enemy = tryCreateEnemy(typeId);
+    if (!enemy) {
+      return;
+    }
+
+    setEnemies((current) => [...current, enemy]);
   }
 
   const handleSpawnEnemyRef = useRef(handleSpawnEnemy);
   handleSpawnEnemyRef.current = handleSpawnEnemy;
 
   useEffect(() => {
-    if (!goldMineTile) {
+    if (!goldMineTile || !builtGoldMine) {
       return;
     }
 
@@ -725,10 +1002,10 @@ export default function PlayScene() {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [goldMineTile]);
+  }, [goldMineTile, builtGoldMine]);
 
   useEffect(() => {
-    if (!ironMineTile) {
+    if (!ironMineTile || !builtIronMine) {
       return;
     }
 
@@ -739,7 +1016,7 @@ export default function PlayScene() {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [ironMineTile]);
+  }, [ironMineTile, builtIronMine]);
 
   useEffect(() => {
     if (farms.length === 0) {
@@ -756,13 +1033,16 @@ export default function PlayScene() {
   }, [farms]);
 
   useEffect(() => {
-    if (!autoSpawnEnemies) {
+    if (!autoSpawnEnemies || !isNight) {
       return;
     }
 
     const spawnRandomEnemy = () => {
+      if (!isNightRef.current) {
+        return;
+      }
       const typeId =
-        ENEMY_TYPE_IDS[Math.floor(Math.random() * ENEMY_TYPE_IDS.length)]!;
+        ARMY_UNIT_IDS[Math.floor(Math.random() * ARMY_UNIT_IDS.length)]!;
       handleSpawnEnemyRef.current(typeId);
     };
 
@@ -775,7 +1055,43 @@ export default function PlayScene() {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [autoSpawnEnemies]);
+  }, [autoSpawnEnemies, isNight]);
+
+  /** Show end-of-wave modal once the inbound night wave is fully cleared. */
+  useEffect(() => {
+    if (!isNight || !nightWaveActiveRef.current) {
+      return;
+    }
+    if (waveSpawnRemainingRef.current > 0) {
+      return;
+    }
+    if (enemies.length > 0) {
+      return;
+    }
+    if (waveClearModal) {
+      return;
+    }
+
+    const kills = { ...nightKillsRef.current };
+    const foodReward = computeWaveFoodReward(kills, waveLevel);
+
+    nightWaveActiveRef.current = false;
+    nightKillsRef.current = {};
+    setWaveClearModal({ kills, foodReward });
+  }, [enemies.length, isNight, waveClearModal, waveLevel]);
+
+  function handleAcceptWaveClear() {
+    if (!waveClearModal) {
+      return;
+    }
+    const foodReward = waveClearModal.foodReward;
+    setFood((current) => current + foodReward);
+    setWaveLevel((current) => current + 1);
+    isNightRef.current = false;
+    setIsNight(false);
+    setWaveClearModal(null);
+    handleSpawn();
+  }
 
   function handleEnemyReachExit(enemyId: number) {
     pendingTargetIdsRef.current.delete(enemyId);
@@ -846,6 +1162,8 @@ export default function PlayScene() {
         goldEarned += stats.goldReward;
         pendingTargetIdsRef.current.delete(enemy.id);
         enemyPositionsRef.current.delete(enemy.id);
+        nightKillsRef.current[enemy.typeId] =
+          (nightKillsRef.current[enemy.typeId] ?? 0) + 1;
         nextEnemies.push({ ...enemy, hp: 0, dying: true });
       }
 
@@ -960,22 +1278,37 @@ export default function PlayScene() {
     registryRef.current.claimLayout(mainOrigin, mainLayout, 0);
     setSpawnedLevels([]);
     setActiveLevelIndex(0);
+    setWaveLevel(1);
     setRevealedPathCount(ENABLE_MAIN_MULTI_PATH ? 0 : 1);
     setSelectedGrassTile(null);
     closeAllMenus();
     setTowers([]);
     setFarms([]);
+    setBuiltGoldMine(false);
+    setBuiltIronMine(false);
     setUnlockedBuildEdges([]);
     setBuildPlots([]);
     setClearedObstacleKeys(new Set());
     setEnemies([]);
     setProjectiles([]);
-    setAutoSpawnEnemies(true);
+    setAutoSpawnEnemies(false);
+    isNightRef.current = false;
+    nightWaveActiveRef.current = false;
+    waveSpawnRemainingRef.current = 0;
+    for (const timeoutId of waveSpawnTimeoutsRef.current) {
+      window.clearTimeout(timeoutId);
+    }
+    waveSpawnTimeoutsRef.current = [];
+    nightKillsRef.current = {};
+    setIsNight(false);
+    setWaveClearModal(null);
     setGold(STARTING_GOLD);
     setIron(STARTING_IRON);
     setWood(STARTING_WOOD);
     setStone(STARTING_STONE);
     setFood(STARTING_FOOD);
+    setArmy(createEmptyArmy());
+    setRaidStatus(null);
     enemyPositionsRef.current.clear();
     pendingTargetIdsRef.current.clear();
     nextChunkId.current = 0;
@@ -998,10 +1331,101 @@ export default function PlayScene() {
     mainOrigin.gz + mainLayout.castle.z,
   );
 
-  function handleAddPath() {
-    setRevealedPathCount((current) =>
-      Math.min(current + 1, mainLayout.paths.length),
-    );
+  function handleCastleClick(pointer: { clientX: number; clientY: number }) {
+    closeAllMenus();
+    setSelectedGrassTile(null);
+    const pos = menuPointer(pointer, containerRef.current);
+    setArmyMenu({
+      clientX: pos.clientX,
+      clientY: pos.clientY,
+    });
+  }
+
+  function handleRecruitArmyUnit(unitId: ArmyUnitId) {
+    if (isNight) {
+      return;
+    }
+    if (!canAffordUnit(unitId, { food })) {
+      return;
+    }
+    const cost = ARMY_UNIT_COSTS[unitId].food;
+    setFood((current) => current - cost);
+    setArmy((current) => ({
+      ...current,
+      [unitId]: current[unitId] + 1,
+    }));
+    setRaidStatus(null);
+  }
+
+  function handleSendAttack() {
+    if (isNight) {
+      return;
+    }
+    const total = armyTotal(army);
+    if (total < 1) {
+      return;
+    }
+
+    // Exact copy of the player's sent roster (for testing inbound waves).
+    const raid = { ...army };
+    const queue: ArmyUnitId[] = [];
+    for (const unitId of ARMY_UNIT_IDS) {
+      for (let i = 0; i < raid[unitId]; i += 1) {
+        queue.push(unitId);
+      }
+    }
+    if (queue.length < 1) {
+      return;
+    }
+
+    // Randomise inbound spawn order (same units, shuffled).
+    for (let i = queue.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const tmp = queue[i]!;
+      queue[i] = queue[j]!;
+      queue[j] = tmp;
+    }
+
+    setArmy(createEmptyArmy());
+    setRaidStatus(`Raid sent — mirrored wave (${total} units)`);
+
+    for (const timeoutId of waveSpawnTimeoutsRef.current) {
+      window.clearTimeout(timeoutId);
+    }
+    waveSpawnTimeoutsRef.current = [];
+
+    isNightRef.current = true;
+    nightWaveActiveRef.current = true;
+    waveSpawnRemainingRef.current = queue.length;
+    nightKillsRef.current = {};
+    setIsNight(true);
+    setArmyMenu(null);
+    setWaveClearModal(null);
+
+    queue.forEach((unitId, index) => {
+      const timeoutId = window.setTimeout(() => {
+        if (!isNightRef.current) {
+          waveSpawnRemainingRef.current = Math.max(
+            0,
+            waveSpawnRemainingRef.current - 1,
+          );
+          return;
+        }
+        const enemy = tryCreateEnemy(unitId);
+        if (enemy) {
+          setEnemies((current) => [...current, enemy]);
+        }
+        waveSpawnRemainingRef.current = Math.max(
+          0,
+          waveSpawnRemainingRef.current - 1,
+        );
+        // Re-check clear when the last queued spawn finishes and map is empty.
+        if (waveSpawnRemainingRef.current === 0) {
+          setEnemies((current) => [...current]);
+        }
+      }, index * WAVE_STAGGER_MS);
+      waveSpawnTimeoutsRef.current.push(timeoutId);
+    });
   }
 
   function handleEdgeGateClick(
@@ -1053,36 +1477,18 @@ export default function PlayScene() {
     }
   }
 
-  useRegisterPlayDebugToolbar(
-    {
-      spawnedLevelCount: spawnedLevels.length,
-      showAddPath: ENABLE_MAIN_MULTI_PATH,
-      addPathDisabled: revealedPathCount >= mainLayout.paths.length,
-      autoSpawnEnemies,
-    },
-    {
-      onSpawnLevel: handleSpawn,
-      onAddPath: handleAddPath,
-      onSpawnGrunt: () => handleSpawnEnemy("grunt"),
-      onSpawnFlyer: () => handleSpawnEnemy("flyer"),
-      onToggleAutoSpawn: () => setAutoSpawnEnemies((current) => !current),
-    },
-  );
-
   const obstacleClearCost =
     obstacleClearMenu?.kind === "rock" ? ROCK_CLEAR_COST : TREE_CLEAR_COST;
-  const obstacleYieldLabel =
-    obstacleClearMenu?.kind === "rock"
-      ? `+${ROCK_CLEAR_STONE} stone`
-      : `+${TREE_CLEAR_WOOD} wood`;
+  const obstacleYieldResource =
+    obstacleClearMenu?.kind === "rock" ? ("stone" as const) : ("wood" as const);
+  const obstacleYieldAmount =
+    obstacleClearMenu?.kind === "rock" ? ROCK_CLEAR_STONE : TREE_CLEAR_WOOD;
 
   return (
     <div ref={containerRef} className="relative h-full w-full">
       <Canvas className="h-full w-full" camera={{ position: [13, 16, 13], fov: 45 }}>
         <SceneRaycastGate enabled={perf.raycast} />
-        <color attach="background" args={["#0b1220"]} />
-        <ambientLight intensity={0.55} />
-        <directionalLight position={[10, 16, 8]} intensity={1.4} />
+        <DayNightCycle isNight={isNight} />
         {perf.previewLevels
           ? spawnedLevels.map((chunk, index) => {
               const isNextPreview = index === spawnedLevels.length - 1;
@@ -1117,6 +1523,8 @@ export default function PlayScene() {
           showGrass={perf.grass}
           goldMine={goldMineTile}
           ironMine={ironMineTile}
+          hasGoldMine={builtGoldMine}
+          hasIronMine={builtIronMine}
           fertileDirt={fertileDirtTile}
           hasFarm={hasMainFarm}
           clearedObstacleKeys={clearedObstacleKeys}
@@ -1175,6 +1583,7 @@ export default function PlayScene() {
                   moveSpeed={stats.moveSpeed}
                   movementType={stats.movementType}
                   dying={enemy.dying}
+                  paused={!isNight}
                   onReachExit={() => handleEnemyReachExit(enemy.id)}
                   onDeathComplete={() => handleEnemyDeathComplete(enemy.id)}
                   onPositionUpdate={(position) => {
@@ -1219,19 +1628,33 @@ export default function PlayScene() {
         {perf.combat
           ? towers.map((tower) => {
               const { x, z } = globalTileWorldPosition(tower.gx, tower.gz);
+              const groundY = tower.groundY ?? 0;
 
               return (
-                <TowerModel
-                  key={tower.id}
-                  typeId={tower.typeId}
-                  position={[x, tower.groundY ?? 0, z]}
-                />
+                <group key={tower.id}>
+                  <TowerModel
+                    typeId={tower.typeId}
+                    position={[x, groundY, z]}
+                  />
+                  <DebugHitbox
+                    size={[1, 1.1, 1]}
+                    position={[x, groundY + 0.55, z]}
+                    color="#c084fc"
+                  />
+                </group>
               );
             })
           : null}
         {perf.castle ? (
-          <CastleModel position={[castleWorld.x, 0, castleWorld.z]} />
+          <CastleModel
+            position={[castleWorld.x, 0, castleWorld.z]}
+            onClick={handleCastleClick}
+          />
         ) : null}
+        <WorldMenuProjector
+          worldPosition={anchoredMenuWorldPosition}
+          targetRef={menuAnchorRef}
+        />
         <GroundOrbitControls
           maxPolarAngle={Math.PI / 2.15}
           minPolarAngle={Math.PI / 6}
@@ -1240,14 +1663,26 @@ export default function PlayScene() {
       <div className="pointer-events-none absolute inset-0 z-10">
         {towerPlaceMenu ? (
           <TowerPlaceMenu
+            ref={menuAnchorRef}
             menu={towerPlaceMenu}
             gold={gold}
             onSelect={handlePlaceTowerFromMenu}
             onClose={() => setTowerPlaceMenu(null)}
           />
         ) : null}
+        {towerManageMenu ? (
+          <TowerManageMenu
+            ref={menuAnchorRef}
+            menu={towerManageMenu}
+            gold={gold}
+            onUpgrade={handleUpgradeTower}
+            onDestroy={handleDestroyTower}
+            onClose={() => setTowerManageMenu(null)}
+          />
+        ) : null}
         {edgeGateMenu ? (
           <EdgeGateMenu
+            ref={menuAnchorRef}
             menu={edgeGateMenu}
             gold={gold}
             onUnlock={handleUnlockEdgeGate}
@@ -1256,23 +1691,55 @@ export default function PlayScene() {
         ) : null}
         {farmPlaceMenu ? (
           <FarmPlaceMenu
+            ref={menuAnchorRef}
             menu={farmPlaceMenu}
             gold={gold}
+            iron={iron}
+            wood={wood}
             onBuild={handleBuildFarm}
             onClose={() => setFarmPlaceMenu(null)}
           />
         ) : null}
+        {minePlaceMenu ? (
+          <MinePlaceMenu
+            ref={menuAnchorRef}
+            menu={minePlaceMenu}
+            gold={gold}
+            onBuild={handleBuildMine}
+            onClose={() => setMinePlaceMenu(null)}
+          />
+        ) : null}
         {obstacleClearMenu ? (
           <ObstacleClearMenu
+            ref={menuAnchorRef}
             menu={obstacleClearMenu}
             gold={gold}
             cost={obstacleClearCost}
-            yieldLabel={obstacleYieldLabel}
+            yieldResource={obstacleYieldResource}
+            yieldAmount={obstacleYieldAmount}
             onClear={handleClearObstacle}
             onClose={() => setObstacleClearMenu(null)}
           />
         ) : null}
-        <LevelHud level={combatLevelIndex + 1} />
+        {armyMenu ? (
+          <CastleArmyMenu
+            menu={armyMenu}
+            army={army}
+            food={food}
+            isDay={!isNight}
+            raidStatus={raidStatus}
+            onRecruit={handleRecruitArmyUnit}
+            onSendAttack={handleSendAttack}
+            onClose={() => setArmyMenu(null)}
+          />
+        ) : null}
+        {waveClearModal ? (
+          <WaveClearModal
+            result={waveClearModal}
+            onAccept={handleAcceptWaveClear}
+          />
+        ) : null}
+        <LevelHud level={waveLevel} />
         <ResourcesHud
           gold={gold}
           iron={iron}

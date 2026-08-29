@@ -22,6 +22,8 @@ export type PlayPerfFlags = {
   grass: boolean;
   /** R3F mouse raycasting against scene meshes (clicks). Orbit still works when off. */
   raycast: boolean;
+  /** Wireframe overlays for clickable hit volumes. */
+  hitboxes: boolean;
 };
 
 const DEFAULT_PERF_FLAGS: PlayPerfFlags = {
@@ -32,7 +34,8 @@ const DEFAULT_PERF_FLAGS: PlayPerfFlags = {
   previewLevels: true,
   combat: true,
   grass: true,
-  raycast: false,
+  raycast: true,
+  hitboxes: false,
 };
 
 const PERF_TOGGLE_LABELS: { key: keyof PlayPerfFlags; label: string }[] = [
@@ -44,6 +47,7 @@ const PERF_TOGGLE_LABELS: { key: keyof PlayPerfFlags; label: string }[] = [
   { key: "combat", label: "Combat" },
   { key: "grass", label: "Grass" },
   { key: "raycast", label: "Rays" },
+  { key: "hitboxes", label: "Hits" },
 ];
 
 type PlayPerfContextValue = {
@@ -72,6 +76,7 @@ export function PlayPerfProvider({ children }: { children: ReactNode }) {
       combat: true,
       grass: true,
       raycast: true,
+      hitboxes: true,
     });
   }, []);
 
@@ -85,6 +90,7 @@ export function PlayPerfProvider({ children }: { children: ReactNode }) {
       combat: true,
       grass: true,
       raycast: false,
+      hitboxes: false,
     });
   }, []);
 

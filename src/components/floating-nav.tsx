@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { FpsCounter } from "@/components/fps-counter";
-import { PlayDebugSubnav } from "@/components/game/play-debug-toolbar";
 import { PlayPerfToggles } from "@/components/game/play-perf-toggles";
 import { LoginForm } from "@/components/login-form";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -50,7 +49,6 @@ export function FloatingNav() {
         </div>
       </div>
 
-      <PlayDebugSubnav />
       <PlayPerfToggles />
 
       {loginOpen ? (

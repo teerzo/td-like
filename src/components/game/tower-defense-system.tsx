@@ -9,13 +9,15 @@ import {
   getTowerMuzzlePosition,
   isWithinTowerStatsRange,
 } from "@/lib/tower-combat";
-import { getTowerStats, type TowerTypeId } from "@/lib/tower-types";
+import { getTowerStatsAtLevel, type TowerTypeId } from "@/lib/tower-types";
 
 export type PlacedTower = {
   id: number;
   gx: number;
   gz: number;
   typeId: TowerTypeId;
+  /** Upgrade level; 1 = base. */
+  level?: number;
   /** Raised hill placement — grants attack range bonus. */
   onHill?: boolean;
   /** World Y of the tile top when placed on a hill. */
@@ -60,7 +62,7 @@ export function TowerDefenseSystem({
     }
 
     for (const tower of towers) {
-      const stats = getTowerStats(tower.typeId);
+      const stats = getTowerStatsAtLevel(tower.typeId, tower.level ?? 1);
       const currentCooldown = cooldownsRef.current.get(tower.id) ?? 0;
 
       if (currentCooldown > 0) {

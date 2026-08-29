@@ -9,8 +9,24 @@ import {
 } from "@/lib/world-layout";
 import type { ChunkOrigin } from "@/lib/global-grid";
 
-/** Gold cost to place a farm on fertile dirt. */
-export const FARM_COST = 50;
+/** Resource cost to place a farm on fertile dirt. */
+export const FARM_COST = {
+  gold: 50,
+  iron: 50,
+  wood: 50,
+} as const;
+
+export function canAffordFarm(resources: {
+  gold: number;
+  iron: number;
+  wood: number;
+}) {
+  return (
+    resources.gold >= FARM_COST.gold &&
+    resources.iron >= FARM_COST.iron &&
+    resources.wood >= FARM_COST.wood
+  );
+}
 
 /** Passive food income from a placed farm. */
 export const FARM_INCOME = 1;

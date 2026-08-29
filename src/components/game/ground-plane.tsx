@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import * as THREE from "three";
 
+import { DebugHitbox } from "@/components/game/debug-hitbox";
 import {
   type ChunkOrigin,
   globalCoordKey,
@@ -92,6 +93,13 @@ function SelectableGrassTile({
       >
         <planeGeometry args={[TILE_SIZE, TILE_SIZE]} />
       </mesh>
+      {onSelectTile ? (
+        <DebugHitbox
+          size={[TILE_SIZE, 0.08, TILE_SIZE]}
+          position={[0, 0.04, 0]}
+          color="#86efac"
+        />
+      ) : null}
       {isSelected ? (
         <mesh
           rotation={[-Math.PI / 2, 0, 0]}

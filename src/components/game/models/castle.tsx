@@ -1,8 +1,10 @@
 "use client";
 
 import { CASTLE_VOXEL } from "@/components/game/models/castle-blocks";
+import { DebugClickVolume } from "@/components/game/debug-hitbox";
 import { useCastleSpriteMaps } from "@/lib/pixel-art/use-castle-sprite-maps";
 import type { CastleSpriteId } from "@/lib/pixel-art/castle-sprites";
+import { TILE_SIZE } from "@/lib/terrain";
 
 type Block = {
   x: number;
@@ -142,15 +144,45 @@ function buildCastleBlocks() {
 
 const CASTLE_BLOCKS = buildCastleBlocks();
 
+type CastlePointer = { clientX: number; clientY: number };
+
 export function CastleModel({
   position = [0, 0, 0],
+  onClick,
 }: {
   position?: [number, number, number];
+  onClick?: (pointer: CastlePointer) => void;
 }) {
   const textureMaps = useCastleSpriteMaps();
 
   return (
     <group position={position}>
+      {/* Tile-sized click volume (wireframe when Hits debug is on). */}
+      <DebugClickVolume
+        position={[0, TILE_SIZE / 2, 0]}
+        size={[TILE_SIZE, TILE_SIZE, TILE_SIZE]}
+        color="#fbbf24"
+        onClick={(event) => {
+          if (!onClick) {
+            return;
+          }
+          event.stopPropagation();
+          onClick({ clientX: event.clientX, clientY: event.clientY });
+        }}
+        onPointerOver={(event) => {
+          if (!onClick) {
+            return;
+          }
+          event.stopPropagation();
+          document.body.style.cursor = "pointer";
+        }}
+        onPointerOut={() => {
+          if (!onClick) {
+            return;
+          }
+          document.body.style.cursor = "auto";
+        }}
+      />
       {CASTLE_BLOCKS.map((block, index) => (
         <mesh
           key={`castle-${index}`}
@@ -159,6 +191,7 @@ export function CastleModel({
             block.y * CASTLE_VOXEL + CASTLE_VOXEL / 2,
             block.z * CASTLE_VOXEL,
           ]}
+          raycast={() => null}
         >
           <boxGeometry args={[CASTLE_VOXEL, CASTLE_VOXEL, CASTLE_VOXEL]} />
           <meshStandardMaterial

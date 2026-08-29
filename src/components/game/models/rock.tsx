@@ -1,6 +1,7 @@
 "use client";
 
 import type { GrassTilePointer } from "@/components/game/ground-plane";
+import { DebugHitbox } from "@/components/game/debug-hitbox";
 import { useCastleSpriteMap } from "@/lib/pixel-art/use-castle-sprite-maps";
 
 const ROCK_BLOCKS = [
@@ -55,6 +56,9 @@ export function RockModel({
 
   return (
     <group position={position} rotation={[0, rotation, 0]} scale={scale}>
+      {onSelect ? (
+        <DebugHitbox size={[0.45, 0.4, 0.4]} position={[0, 0.2, 0]} color="#a8a29e" />
+      ) : null}
       {ROCK_BLOCKS.map((block, index) => (
         <mesh
           key={`rock-${index}`}

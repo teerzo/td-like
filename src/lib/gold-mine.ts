@@ -10,10 +10,14 @@ import {
 /** Passive income from the main-grid gold mine. */
 export const GOLD_MINE_INCOME = 1;
 export const GOLD_MINE_INTERVAL_MS = 2500;
+/** Gold cost to build on a gold deposit. */
+export const GOLD_MINE_COST = 40;
 
 /** Passive income from the main-grid iron mine. */
 export const IRON_MINE_INCOME = 1;
 export const IRON_MINE_INTERVAL_MS = 3000;
+/** Gold cost to build on an iron deposit. */
+export const IRON_MINE_COST = 50;
 
 export const STARTING_IRON = 0;
 

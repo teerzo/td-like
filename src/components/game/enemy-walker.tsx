@@ -16,6 +16,8 @@ type EnemyWalkerProps = {
   moveSpeed: number;
   movementType: EnemyMovementType;
   dying?: boolean;
+  /** When true, the enemy holds position (daytime). */
+  paused?: boolean;
   onReachExit?: () => void;
   onDeathComplete?: () => void;
   onPositionUpdate?: (position: [number, number, number]) => void;
@@ -27,6 +29,7 @@ export function EnemyWalker({
   moveSpeed,
   movementType,
   dying = false,
+  paused = false,
   onReachExit,
   onDeathComplete,
   onPositionUpdate,
@@ -89,7 +92,10 @@ export function EnemyWalker({
       return;
     }
 
-    progress.current += moveSpeed * delta;
+    if (!paused) {
+      progress.current += moveSpeed * delta;
+    }
+
     const maxProgress = path.length - 1;
 
     if (progress.current >= maxProgress) {
