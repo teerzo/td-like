@@ -122,6 +122,26 @@ export function getEnemyStats(typeId: EnemyTypeId): EnemyStats {
   return ENEMY_TYPES[typeId];
 }
 
+const ARMY_HEALTH_PER_LEVEL = 5;
+/** Matches `MAX_ARMY_LEVEL` in army-types (kept here to avoid a circular import). */
+const MAX_ARMY_COMBAT_LEVEL = 3;
+
+/** Combat stats for an army/enemy unit at a castle army tech level (1 = base). */
+export function getEnemyStatsAtLevel(
+  typeId: EnemyTypeId,
+  armyLevel = 1,
+): EnemyStats {
+  const base = getEnemyStats(typeId);
+  const capped = Math.max(1, Math.min(MAX_ARMY_COMBAT_LEVEL, armyLevel));
+  const steps = capped - 1;
+
+  return {
+    ...base,
+    health: base.health + steps * ARMY_HEALTH_PER_LEVEL,
+    armor: base.armor + (capped >= 3 ? 1 : 0),
+  };
+}
+
 /** +8% move speed per wave after wave 1 (wave 1 = 1×). */
 export const WAVE_MOVE_SPEED_BONUS_PER_LEVEL = 0.08;
 export const WAVE_MOVE_SPEED_MAX_MULTIPLIER = 2.5;

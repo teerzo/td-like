@@ -10,6 +10,7 @@ import {
 import { TowerModel, TOWER_MENU_PREVIEW_CAMERA, TOWER_MENU_PREVIEW_POSITION } from "@/components/game/models";
 import { PortraitCostRow } from "@/components/game/portrait-card";
 import { TowerCardHeader } from "@/components/game/tower-portrait";
+import { applyTowerCombatStats, createEmptyRunModifiers, type RunModifiers } from "@/lib/run-relics";
 import {
   getTowerSellRefund,
   getTowerStatsAtLevel,
@@ -28,6 +29,7 @@ export type TowerManageMenuState = {
 type TowerManageMenuProps = {
   menu: TowerManageMenuState;
   gold: number;
+  runModifiers?: RunModifiers;
   onUpgrade: (towerId: number) => void;
   onDestroy: (towerId: number) => void;
   onClose: () => void;
@@ -35,10 +37,13 @@ type TowerManageMenuProps = {
 
 export const TowerManageMenu = forwardRef<HTMLDivElement, TowerManageMenuProps>(
   function TowerManageMenu(
-    { menu, gold, onUpgrade, onDestroy, onClose },
+    { menu, gold, runModifiers, onUpgrade, onDestroy, onClose },
     ref,
   ) {
-    const stats = getTowerStatsAtLevel(menu.typeId, menu.level);
+    const stats = applyTowerCombatStats(
+      getTowerStatsAtLevel(menu.typeId, menu.level),
+      runModifiers ?? createEmptyRunModifiers(),
+    );
     const upgradeCost = getTowerUpgradeCost(menu.typeId, menu.level);
     const sellRefund = getTowerSellRefund(menu.typeId, menu.level);
     const atMax = upgradeCost === null;

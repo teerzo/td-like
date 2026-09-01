@@ -45,6 +45,7 @@ export function computeTowerDamage(
   baseDamage: number,
   damageType: DamageType,
   towerRole: TowerRole,
+  armorPierce = 0,
 ): number {
   if (enemy.immunities.includes(damageType)) {
     return 0;
@@ -59,5 +60,6 @@ export function computeTowerDamage(
     return damage;
   }
 
-  return Math.max(0, damage - enemy.armor);
+  const armor = Math.max(0, enemy.armor - Math.max(0, armorPierce));
+  return Math.max(0, damage - armor);
 }

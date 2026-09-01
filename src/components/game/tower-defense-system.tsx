@@ -12,6 +12,11 @@ import {
   pickTowerTarget,
 } from "@/lib/tower-combat";
 import {
+  applyTowerCombatStats,
+  createEmptyRunModifiers,
+  type RunModifiers,
+} from "@/lib/run-relics";
+import {
   canTowerTargetMovement,
   getTowerStatsAtLevel,
   type TowerTypeId,
@@ -48,6 +53,7 @@ type TowerDefenseSystemProps = {
   enemyPositionsRef: RefObject<Map<number, [number, number, number]>>;
   pendingTargetIdsRef: RefObject<Set<number>>;
   enemyTargets: { id: number; movementType: EnemyMovementType; hp: number }[];
+  runModifiers?: RunModifiers;
   onFireProjectile: (projectile: FiredProjectile) => void;
 };
 
@@ -56,6 +62,7 @@ export function TowerDefenseSystem({
   enemyPositionsRef,
   pendingTargetIdsRef,
   enemyTargets,
+  runModifiers = createEmptyRunModifiers(),
   onFireProjectile,
 }: TowerDefenseSystemProps) {
   const cooldownsRef = useRef(new Map<number, number>());
@@ -68,7 +75,10 @@ export function TowerDefenseSystem({
     }
 
     for (const tower of towers) {
-      const stats = getTowerStatsAtLevel(tower.typeId, tower.level ?? 1);
+      const stats = applyTowerCombatStats(
+        getTowerStatsAtLevel(tower.typeId, tower.level ?? 1),
+        runModifiers,
+      );
       const currentCooldown = cooldownsRef.current.get(tower.id) ?? 0;
 
       if (currentCooldown > 0) {

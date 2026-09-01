@@ -16,9 +16,17 @@ import { isEmptyGrassTowerTile, type RevealedTileKind } from "@/lib/forest-nothi
 import { GOLD_MINE_COST, IRON_MINE_COST } from "@/lib/gold-mine";
 import { LUMBER_MILL_COST } from "@/lib/lumber-mill";
 import { TREE_CLEAR_COST } from "@/lib/resources";
+import {
+  applyTowerCombatStats,
+  applyTowerPlaceGoldCost,
+  applyTowerPlaceWoodCost,
+  canAffordModifiedTowerPlace,
+  chooseAutoplayRelic,
+  type RelicId,
+  type RunModifiers,
+} from "@/lib/run-relics";
 import { getEffectiveAttackRangeTiles } from "@/lib/tower-combat";
 import {
-  canAffordTowerPlace,
   getTowerIronCost,
   getTowerStats,
   getTowerUpgradeCost,
@@ -57,7 +65,8 @@ export type AutoplayAction =
   | { type: "unlockGate"; edge: LevelEdge }
   | { type: "recruit"; unitId: ArmyUnitId }
   | { type: "sendAttack" }
-  | { type: "acceptWaveClear" };
+  | { type: "acceptWaveClear" }
+  | { type: "pickRelic"; relicId: RelicId };
 
 export type AutoplayTower = {
   id: number;
@@ -76,6 +85,9 @@ export type AutoplaySnapshot = {
   waveLevel: number;
   isNight: boolean;
   waveClearOpen: boolean;
+  relicOfferOpen: boolean;
+  relicOffer: readonly RelicId[];
+  runModifiers: RunModifiers;
   /** 0 = rattled (stack towers), 1 = confident (expand instead). */
   confidence: number;
   standingForestKeys: ReadonlySet<string>;
@@ -255,13 +267,22 @@ function needsWoodToPlaceTowers(snap: AutoplaySnapshot): boolean {
   }
 
   const typeId = nextTowerToPlace(snap);
-  const woodCost = getTowerWoodCost(typeId);
+  const woodCost = applyTowerPlaceWoodCost(
+    getTowerWoodCost(typeId),
+    snap.runModifiers,
+    typeId,
+  );
   if (woodCost <= 0) {
     return false;
   }
 
   return (
-    snap.gold >= getTowerStats(typeId).cost && snap.wood < woodCost
+    snap.gold >=
+      applyTowerPlaceGoldCost(
+        getTowerStats(typeId).cost,
+        snap.runModifiers,
+        typeId,
+      ) && snap.wood < woodCost
   );
 }
 
@@ -278,7 +299,12 @@ function needsIronToPlaceTowers(snap: AutoplaySnapshot): boolean {
   }
 
   return (
-    snap.gold >= getTowerStats(typeId).cost && snap.iron < ironCost
+    snap.gold >=
+      applyTowerPlaceGoldCost(
+        getTowerStats(typeId).cost,
+        snap.runModifiers,
+        typeId,
+      ) && snap.iron < ironCost
   );
 }
 
@@ -357,7 +383,11 @@ function goldReservedForTowers(snap: AutoplaySnapshot): number {
   }
 
   if (snap.towers.length === 0) {
-    return getTowerStats(CHEAP_TOWER_ID).cost;
+    return applyTowerPlaceGoldCost(
+      getTowerStats(CHEAP_TOWER_ID).cost,
+      snap.runModifiers,
+      CHEAP_TOWER_ID,
+    );
   }
 
   const saveFor = saveTargetTower(snap);
@@ -365,7 +395,11 @@ function goldReservedForTowers(snap: AutoplaySnapshot): number {
     return 0;
   }
 
-  const cost = getTowerStats(saveFor).cost;
+  const cost = applyTowerPlaceGoldCost(
+    getTowerStats(saveFor).cost,
+    snap.runModifiers,
+    saveFor,
+  );
   return snap.gold >= cost ? cost : 0;
 }
 
@@ -374,11 +408,12 @@ function pickWeightedTower(
   wood: number,
   iron: number,
   waveLevel: number,
+  modifiers: RunModifiers,
   excludeTypeIds: ReadonlySet<TowerTypeId> = new Set(),
 ): TowerTypeId | null {
   const affordable = TOWER_TYPE_IDS.filter(
     (typeId) =>
-      canAffordTowerPlace(typeId, gold, wood, iron) &&
+      canAffordModifiedTowerPlace(typeId, gold, wood, iron, modifiers) &&
       !excludeTypeIds.has(typeId),
   );
   if (affordable.length === 0) {
@@ -403,8 +438,13 @@ function snapshotResources(snap: AutoplaySnapshot): ArmyResources {
   };
 }
 
-function pickRandomRecruit(resources: ArmyResources): ArmyUnitId | null {
-  const affordable = ARMY_UNIT_IDS.filter((id) => canAffordUnit(id, resources));
+function pickRandomRecruit(
+  resources: ArmyResources,
+  foodDiscount = 0,
+): ArmyUnitId | null {
+  const affordable = ARMY_UNIT_IDS.filter((id) =>
+    canAffordUnit(id, resources, foodDiscount),
+  );
   if (affordable.length === 0) {
     return null;
   }
@@ -413,18 +453,21 @@ function pickRandomRecruit(resources: ArmyResources): ArmyUnitId | null {
 }
 
 /** Spend all affordable resources on recruits (uniform random picks). */
-export function planFoodRecruits(resources: ArmyResources): ArmyUnitId[] {
+export function planFoodRecruits(
+  resources: ArmyResources,
+  foodDiscount = 0,
+): ArmyUnitId[] {
   const plan: ArmyUnitId[] = [];
   let remaining = resources;
 
   while (true) {
-    const unitId = pickRandomRecruit(remaining);
+    const unitId = pickRandomRecruit(remaining, foodDiscount);
     if (!unitId) {
       break;
     }
 
     plan.push(unitId);
-    remaining = spendUnitCost(remaining, unitId);
+    remaining = spendUnitCost(remaining, unitId, foodDiscount);
   }
 
   return plan;
@@ -605,8 +648,9 @@ function tileIsInRangeOfRoad(
   typeId: TowerTypeId,
   hillKeys: ReadonlySet<string>,
   roads: readonly { gx: number; gz: number }[],
+  modifiers: RunModifiers,
 ): boolean {
-  const stats = getTowerStats(typeId);
+  const stats = applyTowerCombatStats(getTowerStats(typeId), modifiers);
   const onHill = hillKeys.has(`${gx}:${gz}`);
   const rangeTiles = getEffectiveAttackRangeTiles(stats, onHill);
 
@@ -625,7 +669,16 @@ function countInRangeTowerPlots(
   const roads = parseRoadCoords(snap.roadKeys);
   let count = 0;
   for (const tile of snap.buildableTowerKeys) {
-    if (tileIsInRangeOfRoad(tile.gx, tile.gz, typeId, snap.hillKeys, roads)) {
+    if (
+      tileIsInRangeOfRoad(
+        tile.gx,
+        tile.gz,
+        typeId,
+        snap.hillKeys,
+        roads,
+        snap.runModifiers,
+      )
+    ) {
       count += 1;
     }
   }
@@ -641,12 +694,26 @@ function findPlaceTower(snap: AutoplaySnapshot): AutoplayAction | null {
   let typeId: TowerTypeId | null;
 
   if (saveFor) {
-    if (!canAffordTowerPlace(saveFor, snap.gold, snap.wood, snap.iron)) {
+    if (
+      !canAffordModifiedTowerPlace(
+        saveFor,
+        snap.gold,
+        snap.wood,
+        snap.iron,
+        snap.runModifiers,
+      )
+    ) {
       return null;
     }
     typeId = saveFor;
   } else {
-    typeId = pickWeightedTower(snap.gold, snap.wood, snap.iron, snap.waveLevel);
+    typeId = pickWeightedTower(
+      snap.gold,
+      snap.wood,
+      snap.iron,
+      snap.waveLevel,
+      snap.runModifiers,
+    );
   }
 
   if (!typeId) {
@@ -655,7 +722,14 @@ function findPlaceTower(snap: AutoplaySnapshot): AutoplayAction | null {
 
   const roads = parseRoadCoords(snap.roadKeys);
   const inRangeTiles = snap.buildableTowerKeys.filter((tile) =>
-    tileIsInRangeOfRoad(tile.gx, tile.gz, typeId, snap.hillKeys, roads),
+    tileIsInRangeOfRoad(
+      tile.gx,
+      tile.gz,
+      typeId,
+      snap.hillKeys,
+      roads,
+      snap.runModifiers,
+    ),
   );
   if (inRangeTiles.length === 0) {
     return null;
@@ -702,6 +776,14 @@ export function chooseAutoplayAction(
 ): AutoplayAction | null {
   if (snap.waveClearOpen) {
     return { type: "acceptWaveClear" };
+  }
+
+  if (snap.relicOfferOpen) {
+    const relicId = chooseAutoplayRelic(snap.relicOffer);
+    if (!relicId) {
+      return null;
+    }
+    return { type: "pickRelic", relicId };
   }
 
   if (snap.isNight) {

@@ -9,8 +9,13 @@ import {
 import { TowerModel, TOWER_MENU_PREVIEW_CAMERA, TOWER_MENU_PREVIEW_POSITION } from "@/components/game/models";
 import { TowerCardCostRow, TowerCardHeader } from "@/components/game/tower-portrait";
 import {
-  canAffordTowerPlace,
-  getTowerPlaceCosts,
+  applyTowerCombatStats,
+  canAffordModifiedTowerPlace,
+  createEmptyRunModifiers,
+  getModifiedTowerPlaceCostsForDisplay,
+  type RunModifiers,
+} from "@/lib/run-relics";
+import {
   getTowerStats,
   TOWER_TYPE_IDS,
   type TowerTypeId,
@@ -29,6 +34,7 @@ type TowerPlaceMenuProps = {
   gold: number;
   iron: number;
   wood: number;
+  runModifiers?: RunModifiers;
   onSelect: (typeId: TowerTypeId) => void;
   onClose: () => void;
   onHoverType?: (typeId: TowerTypeId | null) => void;
@@ -36,7 +42,7 @@ type TowerPlaceMenuProps = {
 
 export const TowerPlaceMenu = forwardRef<HTMLDivElement, TowerPlaceMenuProps>(
   function TowerPlaceMenu(
-    { menu, gold, iron, wood, onSelect, onClose, onHoverType },
+    { menu, gold, iron, wood, runModifiers, onSelect, onClose, onHoverType },
     ref,
   ) {
     return (
@@ -54,9 +60,16 @@ export const TowerPlaceMenu = forwardRef<HTMLDivElement, TowerPlaceMenuProps>(
           );
         }}
         actions={TOWER_TYPE_IDS.map((typeId) => {
-          const stats = getTowerStats(typeId);
-          const costs = getTowerPlaceCosts(typeId);
-          const canAfford = canAffordTowerPlace(typeId, gold, wood, iron);
+          const modifiers = runModifiers ?? createEmptyRunModifiers();
+          const stats = applyTowerCombatStats(getTowerStats(typeId), modifiers);
+          const costs = getModifiedTowerPlaceCostsForDisplay(typeId, modifiers);
+          const canAfford = canAffordModifiedTowerPlace(
+            typeId,
+            gold,
+            wood,
+            iron,
+            modifiers,
+          );
 
           return {
             id: typeId,

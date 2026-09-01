@@ -32,6 +32,7 @@ import {
   WaveClearModal,
   type WaveClearModalState,
 } from "@/components/game/wave-clear-modal";
+import { WaveRelicModal } from "@/components/game/wave-relic-modal";
 import {
   FarmPlaceMenu,
   type FarmPlaceMenuState,
@@ -94,6 +95,22 @@ import { getEnemiesInAoe, getEffectiveAttackRangeTiles } from "@/lib/tower-comba
 import { computeTowerDamage } from "@/lib/combat-counters";
 import { CASTLE_MAX_HEALTH, getCastleLeakDamage } from "@/lib/castle";
 import {
+  applyCastleMaxHp,
+  applyEnemyMoveSpeed,
+  applyFarmFoodIncome,
+  applyLumberIncome,
+  applyMineIncome,
+  applyTowerCombatStats,
+  applyTowerPlaceGoldCost,
+  applyTowerPlaceWoodCost,
+  applyWaveGoldReward,
+  canAffordModifiedTowerPlace,
+  getRunModifiers,
+  pickRelicOffer,
+  THICK_WALLS_HP_BONUS,
+  type RelicId,
+} from "@/lib/run-relics";
+import {
   buildGameRunStats,
   createEmptyLifetimeStats,
   recordKill,
@@ -108,7 +125,7 @@ import {
 import type { ResourceId } from "@/components/game/resource-icon";
 import {
   getEnemyMoveSpeedForWave,
-  getEnemyStats,
+  getEnemyStatsAtLevel,
   getWaveSpawnStaggerMs,
   type EnemyTypeId,
 } from "@/lib/enemy-types";
@@ -117,8 +134,11 @@ import {
   armyGoldIncome,
   armyResourcesSpent,
   armyTotal,
+  canAffordArmyUpgrade,
   canAffordUnit,
   createEmptyArmy,
+  MAX_ARMY_LEVEL,
+  spendArmyUpgrade,
   spendUnitCost,
   type ArmyResources,
   type ArmyRoster,
@@ -187,7 +207,6 @@ import {
   TREE_CLEAR_WOOD,
 } from "@/lib/resources";
 import {
-  canAffordTowerPlace,
   canTowerTargetMovement,
   getTowerIronCost,
   getTowerSellRefund,
@@ -235,6 +254,7 @@ type PlacedLevel = {
 type PlacedEnemy = {
   id: number;
   typeId: EnemyTypeId;
+  armyLevel: number;
   path: [number, number, number][];
   hp: number;
   maxHp: number;
@@ -383,13 +403,18 @@ export default function PlayScene() {
   const nightKillsRef = useRef<Partial<Record<EnemyTypeId, number>>>({});
   const nightLeaksRef = useRef<Partial<Record<EnemyTypeId, number>>>({});
   const sentWaveGoldRef = useRef(0);
+  const sentArmyLevelRef = useRef(1);
   const lifetimeStatsRef = useRef<LifetimeStats>(createEmptyLifetimeStats());
   const gameOverRef = useRef(false);
   const [castleHp, setCastleHp] = useState(CASTLE_MAX_HEALTH);
   const [gameOver, setGameOver] = useState<GameOverModalState | null>(null);
   const [waveClearModal, setWaveClearModal] =
     useState<WaveClearModalState | null>(null);
+  const [relicOffer, setRelicOffer] = useState<RelicId[] | null>(null);
+  const [ownedRelics, setOwnedRelics] = useState<RelicId[]>([]);
+  const [freeArcherCharges, setFreeArcherCharges] = useState(0);
   const waveClearOpenedAtRef = useRef<number | null>(null);
+  const relicOfferOpenedAtRef = useRef<number | null>(null);
   const autoplayPendingSendAttackRef = useRef(false);
   const autoplayArmyMenuOpenedAtRef = useRef<number | null>(null);
   const gameOverOpenedAtRef = useRef<number | null>(null);
@@ -397,6 +422,10 @@ export default function PlayScene() {
   useEffect(() => {
     waveClearOpenedAtRef.current = waveClearModal ? Date.now() : null;
   }, [waveClearModal]);
+
+  useEffect(() => {
+    relicOfferOpenedAtRef.current = relicOffer ? Date.now() : null;
+  }, [relicOffer]);
 
   useEffect(() => {
     gameOverOpenedAtRef.current = gameOver ? Date.now() : null;
@@ -453,6 +482,7 @@ export default function PlayScene() {
     useState<ObstacleClearMenuState | null>(null);
   const [armyMenu, setArmyMenu] = useState<CastleArmyMenuState | null>(null);
   const [army, setArmy] = useState<ArmyRoster>(() => createEmptyArmy());
+  const [armyLevel, setArmyLevel] = useState(1);
   const autoplayArmyRef = useRef(army);
   autoplayArmyRef.current = army;
   const [unlockedBuildEdges, setUnlockedBuildEdges] = useState<LevelEdge[]>([]);
@@ -548,6 +578,7 @@ export default function PlayScene() {
     waveSpawnRemainingRef.current = 0;
     setIsNight(false);
     setWaveClearModal(null);
+    setRelicOffer(null);
     setEnemies([]);
     setProjectiles([]);
     closeAllMenus();
@@ -570,6 +601,12 @@ export default function PlayScene() {
       return next;
     });
   }
+
+  const runModifiers = useMemo(
+    () => getRunModifiers(ownedRelics, freeArcherCharges),
+    [ownedRelics, freeArcherCharges],
+  );
+  const castleMaxHp = applyCastleMaxHp(CASTLE_MAX_HEALTH, runModifiers);
 
   const selectedTileKey = selectedGrassTile
     ? globalCoordKey(selectedGrassTile.gx, selectedGrassTile.gz)
@@ -718,9 +755,15 @@ export default function PlayScene() {
   const selectedTowerStats = useMemo(
     () =>
       selectedTower
-        ? getTowerStatsAtLevel(selectedTower.typeId, selectedTower.level ?? 1)
+        ? applyTowerCombatStats(
+            getTowerStatsAtLevel(
+              selectedTower.typeId,
+              selectedTower.level ?? 1,
+            ),
+            runModifiers,
+          )
         : null,
-    [selectedTower],
+    [runModifiers, selectedTower],
   );
 
   const selectedTowerAttackRangeTiles = useMemo(() => {
@@ -1102,16 +1145,22 @@ export default function PlayScene() {
       (tower) => tower.gx === gx && tower.gz === gz,
     );
     const stats = getTowerStats(typeId);
-    const goldCost = stats.cost;
+    const goldCost = applyTowerPlaceGoldCost(stats.cost, runModifiers, typeId);
     const ironCost = getTowerIronCost(typeId);
-    const woodCost = getTowerWoodCost(typeId);
+    const woodCost = applyTowerPlaceWoodCost(
+      getTowerWoodCost(typeId),
+      runModifiers,
+      typeId,
+    );
 
     if (alreadyOccupied) {
       setSelectedGrassTile({ gx, gz });
       return;
     }
 
-    if (!canAffordTowerPlace(typeId, gold, wood, iron)) {
+    if (
+      !canAffordModifiedTowerPlace(typeId, gold, wood, iron, runModifiers)
+    ) {
       return;
     }
 
@@ -1158,6 +1207,9 @@ export default function PlayScene() {
         groundY: hill?.height ?? 0,
       },
     ]);
+    if (typeId === "archer" && runModifiers.freeArcherCharges > 0) {
+      setFreeArcherCharges((current) => Math.max(0, current - 1));
+    }
     setSelectedGrassTile({ gx, gz });
   }
 
@@ -1410,7 +1462,10 @@ export default function PlayScene() {
 
     const tileKey = globalCoordKey(towerPlaceMenu.gx, towerPlaceMenu.gz);
     const previewTypeId = towerPlaceHoverTypeId ?? "archer";
-    const previewStats = getTowerStats(previewTypeId);
+    const previewStats = applyTowerCombatStats(
+      getTowerStats(previewTypeId),
+      runModifiers,
+    );
 
     return {
       gx: towerPlaceMenu.gx,
@@ -1422,6 +1477,7 @@ export default function PlayScene() {
     };
   }, [
     hillTilesByKey,
+    runModifiers,
     selectedTower,
     selectedTowerAttackRangeTiles,
     towerPlaceHoverTypeId,
@@ -1611,12 +1667,24 @@ export default function PlayScene() {
       return;
     }
 
+    if (
+      relicOffer &&
+      autoplayEnabled &&
+      !isAutoplayModalDelayElapsed(relicOfferOpenedAtRef.current)
+    ) {
+      return;
+    }
+
     const waveClearAutoplayReady =
       !autoplayEnabled ||
       isAutoplayModalDelayElapsed(waveClearOpenedAtRef.current);
+    const relicOfferAutoplayReady =
+      !autoplayEnabled ||
+      isAutoplayModalDelayElapsed(relicOfferOpenedAtRef.current);
 
     const autoplayFood = autoplayFoodRef.current;
     const autoplayArmy = autoplayArmyRef.current;
+    const foodDiscount = runModifiers.recruitFoodDiscount;
 
     const snapshot: AutoplaySnapshot = {
       gold,
@@ -1627,6 +1695,9 @@ export default function PlayScene() {
       waveLevel,
       isNight,
       waveClearOpen: !!waveClearModal && waveClearAutoplayReady,
+      relicOfferOpen: !!relicOffer && relicOfferAutoplayReady,
+      relicOffer: relicOffer ?? [],
+      runModifiers,
       confidence: autoplayConfidence,
       standingForestKeys,
       revealedTiles,
@@ -1660,13 +1731,16 @@ export default function PlayScene() {
     }
 
     if (action.type === "recruit") {
-      const recruitPlan = planFoodRecruits({
-        gold,
-        iron,
-        wood,
-        stone,
-        food: autoplayFood,
-      });
+      const recruitPlan = planFoodRecruits(
+        {
+          gold,
+          iron,
+          wood,
+          stone,
+          food: autoplayFood,
+        },
+        foodDiscount,
+      );
       if (recruitPlan.length === 0) {
         return;
       }
@@ -1681,7 +1755,7 @@ export default function PlayScene() {
       const nextArmy = { ...autoplayArmy };
 
       for (const unitId of recruitPlan) {
-        remaining = spendUnitCost(remaining, unitId);
+        remaining = spendUnitCost(remaining, unitId, foodDiscount);
         nextArmy[unitId] += 1;
       }
 
@@ -1733,6 +1807,9 @@ export default function PlayScene() {
       case "acceptWaveClear":
         handleAcceptWaveClear();
         break;
+      case "pickRelic":
+        handlePickRelic(action.relicId);
+        break;
     }
   };
 
@@ -1771,7 +1848,10 @@ export default function PlayScene() {
     Math.max(0, levelChain.length - 1),
   );
 
-  function tryCreateEnemy(typeId: EnemyTypeId): PlacedEnemy | null {
+  function tryCreateEnemy(
+    typeId: EnemyTypeId,
+    spawnArmyLevel = armyLevel,
+  ): PlacedEnemy | null {
     const combatLevel = levelChain[combatLevelIndex];
     if (!combatLevel) {
       return null;
@@ -1787,7 +1867,7 @@ export default function PlayScene() {
     }
 
     const pathIndex = Math.floor(Math.random() * pathCount);
-    const stats = getEnemyStats(typeId);
+    const stats = getEnemyStatsAtLevel(typeId, spawnArmyLevel);
     const path =
       stats.movementType === "flying"
         ? getChainedFlyingWorldPath(
@@ -1812,6 +1892,7 @@ export default function PlayScene() {
     return {
       id,
       typeId: stats.id,
+      armyLevel: spawnArmyLevel,
       path,
       hp: stats.health,
       maxHp: stats.health,
@@ -1881,17 +1962,27 @@ export default function PlayScene() {
     const kills = { ...nightKillsRef.current };
     const leaks = { ...nightLeaksRef.current };
     const foodReward = computeWaveFoodReward(waveLevel);
-    const waveGold = computeWaveGoldReward(waveLevel);
+    const waveGold = applyWaveGoldReward(
+      computeWaveGoldReward(waveLevel),
+      runModifiers,
+    );
     const armyGold = sentWaveGoldRef.current;
+    const goldMineCount = builtMines.filter((mine) => mine.kind === "gold")
+      .length;
+    const ironMineCount = builtMines.filter((mine) => mine.kind === "iron")
+      .length;
     const buildingGold =
-      builtMines.filter((mine) => mine.kind === "gold").length *
-      GOLD_MINE_INCOME;
+      goldMineCount * applyMineIncome(GOLD_MINE_INCOME, runModifiers);
     const buildingIron =
-      builtMines.filter((mine) => mine.kind === "iron").length *
-      IRON_MINE_INCOME;
-    const buildingFood =
-      FARM_INCOME * farms.length + FISHING_HUT_INCOME * fishingHuts.length;
-    const buildingWood = LUMBER_MILL_INCOME * lumberMills.length;
+      ironMineCount * applyMineIncome(IRON_MINE_INCOME, runModifiers);
+    const buildingFood = applyFarmFoodIncome(
+      FARM_INCOME * farms.length + FISHING_HUT_INCOME * fishingHuts.length,
+      runModifiers,
+    );
+    const buildingWood = applyLumberIncome(
+      LUMBER_MILL_INCOME * lumberMills.length,
+      runModifiers,
+    );
 
     nightWaveActiveRef.current = false;
     nightKillsRef.current = {};
@@ -1920,6 +2011,7 @@ export default function PlayScene() {
     farms.length,
     fishingHuts.length,
     lumberMills.length,
+    runModifiers,
   ]);
 
   function handleAcceptWaveClear() {
@@ -1955,9 +2047,33 @@ export default function PlayScene() {
     waveGenerationRef.current += 1;
     setIsNight(false);
     setWaveClearModal(null);
+    const offer = pickRelicOffer(ownedRelics);
+    setRelicOffer(offer.length > 0 ? offer : null);
     if (canExpandMap()) {
       handleSpawn();
     }
+  }
+
+  function handlePickRelic(relicId: RelicId) {
+    if (!relicOffer || !relicOffer.includes(relicId) || gameOverRef.current) {
+      return;
+    }
+
+    const nextOwned = [...ownedRelics, relicId];
+    setOwnedRelics(nextOwned);
+    if (relicId === "freeArcher") {
+      setFreeArcherCharges((current) => current + 1);
+    }
+    if (relicId === "thickWalls") {
+      const nextMax = applyCastleMaxHp(
+        CASTLE_MAX_HEALTH,
+        getRunModifiers(nextOwned, freeArcherCharges),
+      );
+      setCastleHp((current) =>
+        Math.min(nextMax, current + THICK_WALLS_HP_BONUS),
+      );
+    }
+    setRelicOffer(null);
   }
 
   function canExpandMap() {
@@ -2029,7 +2145,7 @@ export default function PlayScene() {
           continue;
         }
 
-        const stats = getEnemyStats(enemy.typeId);
+        const stats = getEnemyStatsAtLevel(enemy.typeId, enemy.armyLevel);
         const towerStats = getTowerStats(projectile.typeId);
         if (!canTowerTargetMovement(towerStats, stats.movementType)) {
           nextEnemies.push(enemy);
@@ -2041,6 +2157,7 @@ export default function PlayScene() {
           projectile.damage,
           projectile.damageType,
           towerStats.role,
+          runModifiers.armorPierce,
         );
         const nextHp = enemy.hp - finalDamage;
 
@@ -2190,6 +2307,11 @@ export default function PlayScene() {
     nightKillsRef.current = {};
     nightLeaksRef.current = {};
     sentWaveGoldRef.current = 0;
+    sentArmyLevelRef.current = 1;
+    setArmyLevel(1);
+    setOwnedRelics([]);
+    setFreeArcherCharges(0);
+    setRelicOffer(null);
     setAutoplayConfidence(AUTOPLAY_CONFIDENCE_START);
     lifetimeStatsRef.current = createEmptyLifetimeStats();
     gameOverRef.current = false;
@@ -2250,8 +2372,9 @@ export default function PlayScene() {
     if (isNight) {
       return;
     }
+    const foodDiscount = runModifiers.recruitFoodDiscount;
     const resources = currentArmyResources();
-    if (!canAffordUnit(unitId, resources)) {
+    if (!canAffordUnit(unitId, resources, foodDiscount)) {
       return;
     }
     const nextArmy = {
@@ -2259,8 +2382,23 @@ export default function PlayScene() {
       [unitId]: autoplayArmyRef.current[unitId] + 1,
     };
     autoplayArmyRef.current = nextArmy;
-    applyArmyResources(spendUnitCost(resources, unitId));
+    applyArmyResources(spendUnitCost(resources, unitId, foodDiscount));
     setArmy(nextArmy);
+  }
+
+  function handleUpgradeArmy() {
+    if (isNight) {
+      return;
+    }
+    if (armyLevel >= MAX_ARMY_LEVEL) {
+      return;
+    }
+    const resources = currentArmyResources();
+    if (!canAffordArmyUpgrade(armyLevel, resources)) {
+      return;
+    }
+    applyArmyResources(spendArmyUpgrade(resources, armyLevel));
+    setArmyLevel((current) => Math.min(MAX_ARMY_LEVEL, current + 1));
   }
 
   function handleClearArmy() {
@@ -2273,7 +2411,10 @@ export default function PlayScene() {
       return;
     }
 
-    const refund = armyResourcesSpent(currentArmy);
+    const refund = armyResourcesSpent(
+      currentArmy,
+      runModifiers.recruitFoodDiscount,
+    );
     const resources = currentArmyResources();
     const emptyArmy = createEmptyArmy();
 
@@ -2305,6 +2446,7 @@ export default function PlayScene() {
     // Exact copy of the player's sent roster (1:1 inbound wave).
     const raid = { ...currentArmy };
     sentWaveGoldRef.current = armyGoldIncome(raid);
+    sentArmyLevelRef.current = armyLevel;
     const queue: ArmyUnitId[] = [];
     for (const unitId of ARMY_UNIT_IDS) {
       for (let i = 0; i < raid[unitId]; i += 1) {
@@ -2359,7 +2501,7 @@ export default function PlayScene() {
           );
           return;
         }
-        const enemy = tryCreateEnemy(unitId);
+        const enemy = tryCreateEnemy(unitId, sentArmyLevelRef.current);
         if (enemy) {
           setEnemies((current) => [...current, enemy]);
         }
@@ -2555,14 +2697,17 @@ export default function PlayScene() {
           : null}
         {perf.combat
           ? enemies.map((enemy) => {
-              const stats = getEnemyStats(enemy.typeId);
+              const stats = getEnemyStatsAtLevel(enemy.typeId, enemy.armyLevel);
 
               return (
                 <EnemyWalker
                   key={enemy.id}
                   path={enemy.path}
                   typeId={enemy.typeId}
-                  moveSpeed={getEnemyMoveSpeedForWave(stats.moveSpeed, waveLevel)}
+                  moveSpeed={applyEnemyMoveSpeed(
+                    getEnemyMoveSpeedForWave(stats.moveSpeed, waveLevel),
+                    runModifiers,
+                  )}
                   movementType={stats.movementType}
                   hp={enemy.hp}
                   maxHp={enemy.maxHp}
@@ -2585,11 +2730,13 @@ export default function PlayScene() {
             towers={towers}
             enemyPositionsRef={enemyPositionsRef}
             pendingTargetIdsRef={pendingTargetIdsRef}
+            runModifiers={runModifiers}
             enemyTargets={enemies
               .filter((enemy) => !enemy.dying)
               .map((enemy) => ({
                 id: enemy.id,
-                movementType: getEnemyStats(enemy.typeId).movementType,
+                movementType: getEnemyStatsAtLevel(enemy.typeId, enemy.armyLevel)
+                  .movementType,
                 hp: enemy.hp,
               }))}
             onFireProjectile={handleFireProjectile}
@@ -2640,7 +2787,7 @@ export default function PlayScene() {
               onClick={gameOver ? undefined : handleCastleClick}
             />
             {!gameOver ? (
-              <CastleHealthBar hp={castleHp} maxHp={CASTLE_MAX_HEALTH} />
+              <CastleHealthBar hp={castleHp} maxHp={castleMaxHp} />
             ) : null}
           </group>
         ) : null}
@@ -2672,6 +2819,7 @@ export default function PlayScene() {
             gold={gold}
             iron={iron}
             wood={wood}
+            runModifiers={runModifiers}
             onSelect={handlePlaceTowerFromMenu}
             onClose={dismissAnchoredMenus}
             onHoverType={setTowerPlaceHoverTypeId}
@@ -2682,6 +2830,7 @@ export default function PlayScene() {
             ref={menuAnchorRef}
             menu={towerManageMenu}
             gold={gold}
+            runModifiers={runModifiers}
             onUpgrade={handleUpgradeTower}
             onDestroy={handleDestroyTower}
             onClose={dismissAnchoredMenus}
@@ -2767,7 +2916,10 @@ export default function PlayScene() {
               builtMines.filter((mine) => mine.kind === "iron").length
             }
             isDay={!isNight}
+            armyLevel={armyLevel}
+            runModifiers={runModifiers}
             onRecruit={handleRecruitArmyUnit}
+            onUpgradeArmy={handleUpgradeArmy}
             onClear={handleClearArmy}
             onSendAttack={handleSendAttack}
             onClose={() => {
@@ -2786,6 +2938,9 @@ export default function PlayScene() {
             result={waveClearModal}
             onAccept={handleAcceptWaveClear}
           />
+        ) : null}
+        {relicOffer && !gameOver ? (
+          <WaveRelicModal offer={relicOffer} onPick={handlePickRelic} />
         ) : null}
       </div>
     </div>

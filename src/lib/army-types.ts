@@ -50,6 +50,74 @@ export const ARMY_UNIT_COSTS: Record<ArmyUnitId, ArmyUnitCost> = {
   dragon: { food: 60, gold: 10 },
 };
 
+export const MAX_ARMY_LEVEL = 3;
+
+const ARMY_UPGRADE_COSTS: Record<2 | 3, ArmyUnitCost> = {
+  2: { gold: 25, food: 15, wood: 10, iron: 10 },
+  3: { gold: 50, food: 30, wood: 20, iron: 20, stone: 10 },
+};
+
+/** Cost to raise army tech from `currentLevel` → next, or null if maxed. */
+export function getArmyUpgradeCost(
+  currentLevel: number,
+): ArmyUnitCost | null {
+  if (currentLevel < 1 || currentLevel >= MAX_ARMY_LEVEL) {
+    return null;
+  }
+
+  return ARMY_UPGRADE_COSTS[(currentLevel + 1) as 2 | 3];
+}
+
+export function getArmyUpgradeCostLines(
+  currentLevel: number,
+): ResourceCostLine[] {
+  const cost = getArmyUpgradeCost(currentLevel);
+  if (!cost) {
+    return [];
+  }
+
+  const lines: ResourceCostLine[] = [];
+  for (const resource of COST_RESOURCES) {
+    const amount = getUnitCostAmount(cost, resource);
+    if (amount > 0) {
+      lines.push({ resource, amount });
+    }
+  }
+  return lines;
+}
+
+export function canAffordArmyUpgrade(
+  currentLevel: number,
+  resources: ArmyResources,
+): boolean {
+  const cost = getArmyUpgradeCost(currentLevel);
+  if (!cost) {
+    return false;
+  }
+
+  return COST_RESOURCES.every(
+    (resource) => resources[resource] >= getUnitCostAmount(cost, resource),
+  );
+}
+
+export function spendArmyUpgrade(
+  resources: ArmyResources,
+  currentLevel: number,
+): ArmyResources {
+  const cost = getArmyUpgradeCost(currentLevel);
+  if (!cost) {
+    return resources;
+  }
+
+  return {
+    gold: resources.gold - (cost.gold ?? 0),
+    iron: resources.iron - (cost.iron ?? 0),
+    wood: resources.wood - (cost.wood ?? 0),
+    stone: resources.stone - (cost.stone ?? 0),
+    food: resources.food - cost.food,
+  };
+}
+
 export type ArmyRoster = Record<ArmyUnitId, number>;
 
 export function createEmptyArmy(): ArmyRoster {
@@ -106,8 +174,26 @@ export function getUnitCostAmount(
   return cost[resource] ?? 0;
 }
 
-export function getUnitCostLines(unitId: ArmyUnitId): ResourceCostLine[] {
+export function unitCostWithFoodDiscount(
+  unitId: ArmyUnitId,
+  foodDiscount = 0,
+): ArmyUnitCost {
   const cost = ARMY_UNIT_COSTS[unitId];
+  if (foodDiscount <= 0) {
+    return cost;
+  }
+
+  return {
+    ...cost,
+    food: Math.max(1, cost.food - foodDiscount),
+  };
+}
+
+export function getUnitCostLines(
+  unitId: ArmyUnitId,
+  foodDiscount = 0,
+): ResourceCostLine[] {
+  const cost = unitCostWithFoodDiscount(unitId, foodDiscount);
   const lines: ResourceCostLine[] = [];
   for (const resource of COST_RESOURCES) {
     const amount = getUnitCostAmount(cost, resource);
@@ -121,8 +207,9 @@ export function getUnitCostLines(unitId: ArmyUnitId): ResourceCostLine[] {
 export function canAffordUnit(
   unitId: ArmyUnitId,
   resources: ArmyResources,
+  foodDiscount = 0,
 ): boolean {
-  const cost = ARMY_UNIT_COSTS[unitId];
+  const cost = unitCostWithFoodDiscount(unitId, foodDiscount);
   return COST_RESOURCES.every(
     (resource) => resources[resource] >= getUnitCostAmount(cost, resource),
   );
@@ -131,8 +218,9 @@ export function canAffordUnit(
 export function spendUnitCost(
   resources: ArmyResources,
   unitId: ArmyUnitId,
+  foodDiscount = 0,
 ): ArmyResources {
-  const cost = ARMY_UNIT_COSTS[unitId];
+  const cost = unitCostWithFoodDiscount(unitId, foodDiscount);
   return {
     gold: resources.gold - (cost.gold ?? 0),
     iron: resources.iron - (cost.iron ?? 0),
@@ -142,14 +230,17 @@ export function spendUnitCost(
   };
 }
 
-export function armyResourcesSpent(army: ArmyRoster): ArmyResources {
+export function armyResourcesSpent(
+  army: ArmyRoster,
+  foodDiscount = 0,
+): ArmyResources {
   const spent = createEmptyArmyResources();
   for (const id of ARMY_UNIT_IDS) {
     const count = army[id];
     if (count <= 0) {
       continue;
     }
-    const cost = ARMY_UNIT_COSTS[id];
+    const cost = unitCostWithFoodDiscount(id, foodDiscount);
     spent.food += count * cost.food;
     spent.gold += count * (cost.gold ?? 0);
     spent.iron += count * (cost.iron ?? 0);
@@ -163,11 +254,8 @@ export function armyFoodSpent(army: ArmyRoster): number {
   return armyResourcesSpent(army).food;
 }
 
-export function missingUnitCostHint(
-  unitId: ArmyUnitId,
-  resources: ArmyResources,
-): string {
-  const missing = getUnitCostLines(unitId).filter(
+function missingCostHint(lines: ResourceCostLine[], resources: ArmyResources) {
+  const missing = lines.filter(
     (line) => resources[line.resource] < line.amount,
   );
   if (missing.length === 0) {
@@ -180,6 +268,21 @@ export function missingUnitCostHint(
         `x${line.amount} ${getResourceLabel(line.resource).toLowerCase()}`,
     )
     .join(", ")}`;
+}
+
+export function missingUnitCostHint(
+  unitId: ArmyUnitId,
+  resources: ArmyResources,
+  foodDiscount = 0,
+): string {
+  return missingCostHint(getUnitCostLines(unitId, foodDiscount), resources);
+}
+
+export function missingArmyUpgradeHint(
+  currentLevel: number,
+  resources: ArmyResources,
+): string {
+  return missingCostHint(getArmyUpgradeCostLines(currentLevel), resources);
 }
 
 /** Narrow army unit ids for shared enemy model / walker IDs. */

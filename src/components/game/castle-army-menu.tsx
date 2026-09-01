@@ -17,14 +17,26 @@ import { FARM_INCOME } from "@/lib/fertile-farm";
 import { FISHING_HUT_INCOME } from "@/lib/fishing-hut";
 import { GOLD_MINE_INCOME, IRON_MINE_INCOME } from "@/lib/gold-mine";
 import { LUMBER_MILL_INCOME } from "@/lib/lumber-mill";
-import { getEnemyStats, type EnemyMovementType } from "@/lib/enemy-types";
+import {
+  applyFarmFoodIncome,
+  applyLumberIncome,
+  applyMineIncome,
+  applyWaveGoldReward,
+  createEmptyRunModifiers,
+  type RunModifiers,
+} from "@/lib/run-relics";
+import { getEnemyStatsAtLevel, type EnemyMovementType } from "@/lib/enemy-types";
 import {
   ARMY_UNIT_GOLD_INCOME,
   ARMY_UNIT_IDS,
   armyGoldIncome,
   armyTotal,
+  canAffordArmyUpgrade,
   canAffordUnit,
+  getArmyUpgradeCostLines,
   getUnitCostLines,
+  MAX_ARMY_LEVEL,
+  missingArmyUpgradeHint,
   missingUnitCostHint,
   type ArmyRoster,
   type ArmyUnitId,
@@ -50,7 +62,10 @@ type CastleArmyMenuProps = {
   goldMineCount: number;
   ironMineCount: number;
   isDay: boolean;
+  armyLevel: number;
+  runModifiers?: RunModifiers;
   onRecruit: (unitId: ArmyUnitId) => void;
+  onUpgradeArmy: () => void;
   onClear: () => void;
   onSendAttack: () => void;
   onClose: () => void;
@@ -94,20 +109,33 @@ export function CastleArmyMenu({
   goldMineCount,
   ironMineCount,
   isDay,
+  armyLevel,
+  runModifiers,
   onRecruit,
+  onUpgradeArmy,
   onClear,
   onSendAttack,
   onClose,
 }: CastleArmyMenuProps) {
+  const modifiers = runModifiers ?? createEmptyRunModifiers();
+  const foodDiscount = modifiers.recruitFoodDiscount;
   const total = armyTotal(army);
   const armyGold = armyGoldIncome(army);
   const waveFood = computeWaveFoodReward(waveLevel);
-  const waveGold = computeWaveGoldReward(waveLevel);
-  const buildingFood =
-    FARM_INCOME * farmCount + FISHING_HUT_INCOME * fishingHutCount;
-  const buildingGold = GOLD_MINE_INCOME * goldMineCount;
-  const buildingIron = IRON_MINE_INCOME * ironMineCount;
-  const buildingWood = LUMBER_MILL_INCOME * lumberMillCount;
+  const waveGold = applyWaveGoldReward(
+    computeWaveGoldReward(waveLevel),
+    modifiers,
+  );
+  const buildingFood = applyFarmFoodIncome(
+    FARM_INCOME * farmCount + FISHING_HUT_INCOME * fishingHutCount,
+    modifiers,
+  );
+  const buildingGold = applyMineIncome(GOLD_MINE_INCOME, modifiers) * goldMineCount;
+  const buildingIron = applyMineIncome(IRON_MINE_INCOME, modifiers) * ironMineCount;
+  const buildingWood = applyLumberIncome(
+    LUMBER_MILL_INCOME * lumberMillCount,
+    modifiers,
+  );
   const buildingYields = [
     buildingFood > 0 ? { resource: "food" as const, amount: buildingFood, gain: true } : null,
     buildingGold > 0 ? { resource: "gold" as const, amount: buildingGold, gain: true } : null,
@@ -119,6 +147,17 @@ export function CastleArmyMenu({
   const canSend = isDay && total > 0;
   const canClear = isDay && total > 0;
   const resources = { gold, iron, wood, stone, food };
+  const atMaxArmyLevel = armyLevel >= MAX_ARMY_LEVEL;
+  const upgradeCostLines = getArmyUpgradeCostLines(armyLevel);
+  const canAffordUpgrade = canAffordArmyUpgrade(armyLevel, resources);
+  const canUpgrade = isDay && !atMaxArmyLevel && canAffordUpgrade;
+  const upgradeHint = !isDay
+    ? "Upgrade during the day"
+    : atMaxArmyLevel
+      ? "Army is max level"
+      : canAffordUpgrade
+        ? `Upgrade army to Lv ${armyLevel + 1}`
+        : missingArmyUpgradeHint(armyLevel, resources);
 
   return (
     <>
@@ -160,11 +199,11 @@ export function CastleArmyMenu({
             }}
           >
           {ARMY_UNIT_IDS.map((unitId) => {
-            const stats = getEnemyStats(unitId);
-            const costLines = getUnitCostLines(unitId);
-            const affordable = canAffordUnit(unitId, resources);
+            const stats = getEnemyStatsAtLevel(unitId, armyLevel);
+            const costLines = getUnitCostLines(unitId, foodDiscount);
+            const affordable = canAffordUnit(unitId, resources, foodDiscount);
             const recruitDisabled = !isDay || !affordable;
-            const needHint = missingUnitCostHint(unitId, resources);
+            const needHint = missingUnitCostHint(unitId, resources, foodDiscount);
             const foodCost = costLines[0];
             const extraCost = costLines[1];
 
@@ -308,6 +347,23 @@ export function CastleArmyMenu({
         </div>
 
         <div className="mt-4 flex shrink-0 flex-col gap-2.5">
+          <button
+            type="button"
+            disabled={!canUpgrade}
+            title={upgradeHint}
+            aria-label={upgradeHint}
+            className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 rounded-xl border border-amber-300/40 bg-amber-500/10 px-3 py-2.5 text-base font-semibold text-amber-50 transition enabled:hover:border-amber-300/60 enabled:hover:bg-amber-500/25 disabled:cursor-not-allowed disabled:opacity-40"
+            onClick={onUpgradeArmy}
+          >
+            <span>
+              {atMaxArmyLevel
+                ? `Army Lv ${armyLevel} · Max`
+                : `Upgrade army · Lv ${armyLevel}`}
+            </span>
+            {!atMaxArmyLevel ? (
+              <ResourceCostRow costs={upgradeCostLines} />
+            ) : null}
+          </button>
           <div className="grid grid-cols-2 gap-2.5">
             <button
               type="button"
