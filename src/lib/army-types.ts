@@ -81,6 +81,24 @@ export function armyTotal(army: ArmyRoster): number {
   return total;
 }
 
+/** Gold paid at wave end per unit sent (independent of kills). */
+export const ARMY_UNIT_GOLD_INCOME: Record<ArmyUnitId, number> = {
+  peon: 1,
+  bat: 1,
+  archer: 1,
+  knight: 1,
+  catapult: 1,
+  dragon: 1,
+};
+
+export function armyGoldIncome(army: ArmyRoster): number {
+  let total = 0;
+  for (const id of ARMY_UNIT_IDS) {
+    total += army[id] * ARMY_UNIT_GOLD_INCOME[id];
+  }
+  return total;
+}
+
 export function getUnitCostAmount(
   cost: ArmyUnitCost,
   resource: ResourceId,

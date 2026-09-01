@@ -2,8 +2,8 @@ import type { GridCoord } from "@/lib/world-layout";
 
 /** Resource cost to place a fishing hut on a pond. */
 export const FISHING_HUT_COST = {
-  gold: 40,
-  wood: 60,
+  gold: 20,
+  wood: 20,
 } as const;
 
 export function canAffordFishingHut(resources: {

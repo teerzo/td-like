@@ -81,7 +81,7 @@ export const ENEMY_TYPES: Record<EnemyTypeId, EnemyStats> = {
     health: 15,
     armor: 0,
     immunities: [],
-    goldReward: 2,
+    goldReward: 1,
   },
   knight: {
     id: "knight",
@@ -92,7 +92,7 @@ export const ENEMY_TYPES: Record<EnemyTypeId, EnemyStats> = {
     health: 32,
     armor: 2,
     immunities: [],
-    goldReward: 3,
+    goldReward: 1,
   },
   catapult: {
     id: "catapult",
@@ -103,7 +103,7 @@ export const ENEMY_TYPES: Record<EnemyTypeId, EnemyStats> = {
     health: 45,
     armor: 0,
     immunities: [],
-    goldReward: 4,
+    goldReward: 1,
   },
   dragon: {
     id: "dragon",
@@ -114,7 +114,7 @@ export const ENEMY_TYPES: Record<EnemyTypeId, EnemyStats> = {
     health: 28,
     armor: 2,
     immunities: [],
-    goldReward: 7,
+    goldReward: 1,
   },
 };
 

@@ -186,13 +186,14 @@ export function GrassGround({
   passiveLocalKeys,
   selectedTileKey,
   onSelectTile,
+  onSelectTreeTile,
 }: {
   size?: number;
   origin: ChunkOrigin;
   opacity?: number;
   /** Local `x:z` keys where grass should not be rendered (e.g. dirt roads). */
   omitLocalKeys?: ReadonlySet<string>;
-  /** Local `x:z` keys that still get a grass plane, but no click hitbox. */
+  /** Local `x:z` keys under standing trees; clicks use `onSelectTreeTile`. */
   passiveLocalKeys?: ReadonlySet<string>;
 } & GrassSelectionProps) {
   const tiles = useMemo(() => {
@@ -215,12 +216,25 @@ export function GrassGround({
         const material = materials[textureId];
 
         if (passiveLocalKeys?.has(tile.key)) {
+          if (!onSelectTreeTile) {
+            return (
+              <StaticGrassTile
+                key={tile.key}
+                gx={gx}
+                gz={gz}
+                material={material}
+              />
+            );
+          }
+
           return (
-            <StaticGrassTile
+            <SelectableGrassTile
               key={tile.key}
               gx={gx}
               gz={gz}
               material={material}
+              selectedTileKey={selectedTileKey}
+              onSelectTile={onSelectTreeTile}
             />
           );
         }

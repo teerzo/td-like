@@ -26,6 +26,10 @@ import {
   mountainVariant,
   FishingHutModel,
   fishingHutVariant,
+  LumberMillModel,
+  lumberMillVariant,
+  LumberPlotModel,
+  lumberPlotVariant,
   PondModel,
   pondVariant,
   RockModel,
@@ -109,6 +113,7 @@ type TerrainProps = {
   builtMines?: readonly BuiltMine[];
   /** Global farms on revealed fertile tiles. */
   farms?: readonly { gx: number; gz: number }[];
+  lumberMills?: readonly { gx: number; gz: number }[];
   /** Global tile keys where tree/rock decor was cleared. */
   clearedObstacleKeys?: ReadonlySet<string>;
 } & GrassSelectionProps;
@@ -383,6 +388,7 @@ function RevealedSpecialTiles({
   revealedTiles,
   builtMines,
   farms,
+  lumberMills,
   fishingHutKeys,
   selectedTileKey,
   onSelectTile,
@@ -392,6 +398,7 @@ function RevealedSpecialTiles({
   revealedTiles: ReadonlyMap<string, RevealedTileKind>;
   builtMines: readonly BuiltMine[];
   farms: readonly { gx: number; gz: number }[];
+  lumberMills?: readonly { gx: number; gz: number }[];
   fishingHutKeys?: ReadonlySet<string>;
 } & GrassSelectionProps) {
   const builtMineKeys = useMemo(
@@ -401,6 +408,13 @@ function RevealedSpecialTiles({
   const farmKeys = useMemo(
     () => new Set(farms.map((farm) => globalCoordKey(farm.gx, farm.gz))),
     [farms],
+  );
+  const lumberMillKeys = useMemo(
+    () =>
+      new Set(
+        (lumberMills ?? []).map((mill) => globalCoordKey(mill.gx, mill.gz)),
+      ),
+    [lumberMills],
   );
 
   const entries = useMemo(() => {
@@ -525,6 +539,33 @@ function RevealedSpecialTiles({
           );
         }
 
+        if (kind === "lumber") {
+          const plotVariant = lumberPlotVariant(x, z);
+          const millVariant = lumberMillVariant(x, z);
+          const hasMill = lumberMillKeys.has(key);
+
+          return (
+            <group key={`revealed-lumber-${key}`}>
+              {!hasMill ? (
+                <LumberPlotModel
+                  position={[worldX, 0, worldZ]}
+                  rotation={plotVariant.rotation}
+                  scale={plotVariant.scale}
+                  selected={selectedTileKey === key}
+                  onSelect={selectHandler}
+                />
+              ) : (
+                <LumberMillModel
+                  position={[worldX, 0, worldZ]}
+                  rotation={millVariant.rotation}
+                  scale={millVariant.scale}
+                  onSelect={selectHandler}
+                />
+              )}
+            </group>
+          );
+        }
+
         return null;
       })}
     </group>
@@ -551,6 +592,7 @@ export function Terrain({
   revealedTiles,
   builtMines = [],
   farms = [],
+  lumberMills = [],
   clearedObstacleKeys,
   selectedTileKey,
   onSelectTile,
@@ -858,6 +900,7 @@ export function Terrain({
           passiveLocalKeys={forestPassiveGrassKeys}
           selectedTileKey={selectedTileKey}
           onSelectTile={onSelectTile}
+          onSelectTreeTile={onSelectTreeTile}
         />
       ) : null}
       {showCastlePad ? (
@@ -930,6 +973,7 @@ export function Terrain({
           revealedTiles={revealedTiles}
           builtMines={builtMines}
           farms={farms}
+          lumberMills={lumberMills}
           fishingHutKeys={fishingHutKeys}
           selectedTileKey={selectedTileKey}
           onSelectTile={onSelectTile}

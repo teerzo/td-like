@@ -20,6 +20,10 @@ import {
   hillVariant,
   IronMineModel,
   ironMineVariant,
+  LumberMillModel,
+  lumberMillVariant,
+  LumberPlotModel,
+  lumberPlotVariant,
   MountainModel,
   mountainVariant,
   OreDepositModel,
@@ -55,6 +59,7 @@ type ForestGroundProps = {
   revealedTiles: ReadonlyMap<string, RevealedTileKind>;
   builtMines: readonly BuiltMine[];
   farms: readonly { gx: number; gz: number }[];
+  lumberMills: readonly { gx: number; gz: number }[];
   fishingHutKeys: ReadonlySet<string>;
   clearedObstacleKeys: ReadonlySet<string>;
   isGlobalRoad: (gx: number, gz: number) => boolean;
@@ -68,6 +73,7 @@ export function ForestGround({
   revealedTiles,
   builtMines,
   farms,
+  lumberMills,
   fishingHutKeys,
   clearedObstacleKeys,
   isGlobalRoad,
@@ -85,6 +91,11 @@ export function ForestGround({
   const farmKeys = useMemo(
     () => new Set(farms.map((farm) => globalCoordKey(farm.gx, farm.gz))),
     [farms],
+  );
+
+  const lumberMillKeys = useMemo(
+    () => new Set(lumberMills.map((mill) => globalCoordKey(mill.gx, mill.gz))),
+    [lumberMills],
   );
 
   const omitGrassKeys = useMemo(() => {
@@ -127,6 +138,7 @@ export function ForestGround({
         passiveLocalKeys={omitGrassKeys.passive}
         selectedTileKey={selectedTileKey}
         onSelectTile={onSelectTile}
+        onSelectTreeTile={onSelectTreeTile}
       />
       {tiles.map((tile) => {
         const gx = plot.origin.gx + tile.x;
@@ -307,6 +319,33 @@ export function ForestGround({
                   position={[x, 0, z]}
                   rotation={farmVariant.rotation}
                   scale={farmVariant.scale}
+                  onSelect={selectHandler}
+                />
+              )}
+            </group>
+          );
+        }
+
+        if (revealed === "lumber") {
+          const plotVariant = lumberPlotVariant(tile.x, tile.z);
+          const millVariant = lumberMillVariant(tile.x, tile.z);
+          const hasMill = lumberMillKeys.has(key);
+
+          return (
+            <group key={`forest-lumber-${key}`}>
+              {!hasMill ? (
+                <LumberPlotModel
+                  position={[x, 0, z]}
+                  rotation={plotVariant.rotation}
+                  scale={plotVariant.scale}
+                  selected={selectedTileKey === key}
+                  onSelect={selectHandler}
+                />
+              ) : (
+                <LumberMillModel
+                  position={[x, 0, z]}
+                  rotation={millVariant.rotation}
+                  scale={millVariant.scale}
                   onSelect={selectHandler}
                 />
               )}

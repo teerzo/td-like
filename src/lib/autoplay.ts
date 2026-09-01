@@ -14,11 +14,15 @@ import {
 } from "@/lib/fishing-hut";
 import { isEmptyGrassTowerTile, type RevealedTileKind } from "@/lib/forest-nothing";
 import { GOLD_MINE_COST, IRON_MINE_COST } from "@/lib/gold-mine";
+import { LUMBER_MILL_COST } from "@/lib/lumber-mill";
 import { TREE_CLEAR_COST } from "@/lib/resources";
 import { getEffectiveAttackRangeTiles } from "@/lib/tower-combat";
 import {
+  canAffordTowerPlace,
+  getTowerIronCost,
   getTowerStats,
   getTowerUpgradeCost,
+  getTowerWoodCost,
   TOWER_TYPE_IDS,
   type TowerTypeId,
 } from "@/lib/tower-types";
@@ -46,6 +50,7 @@ export type AutoplayAction =
   | { type: "cutTree"; gx: number; gz: number }
   | { type: "buildMine"; kind: "gold" | "iron"; gx: number; gz: number }
   | { type: "buildFarm"; gx: number; gz: number }
+  | { type: "buildLumberMill"; gx: number; gz: number }
   | { type: "buildFishingHut"; gx: number; gz: number }
   | { type: "placeTower"; typeId: TowerTypeId; gx: number; gz: number }
   | { type: "upgradeTower"; towerId: number }
@@ -77,6 +82,7 @@ export type AutoplaySnapshot = {
   revealedTiles: ReadonlyMap<string, RevealedTileKind>;
   builtMineKeys: ReadonlySet<string>;
   farmKeys: ReadonlySet<string>;
+  lumberMillKeys: ReadonlySet<string>;
   fishingHutKeys: ReadonlySet<string>;
   clearedObstacleKeys: ReadonlySet<string>;
   towerOccupiedKeys: ReadonlySet<string>;
@@ -237,6 +243,45 @@ function wantsMoreTowers(snap: AutoplaySnapshot): boolean {
   return snap.towers.length < desiredTowerCount(snap);
 }
 
+/** Next tower we would place if gold were enough (usually archer). */
+function nextTowerToPlace(snap: AutoplaySnapshot): TowerTypeId {
+  return saveTargetTower(snap) ?? CHEAP_TOWER_ID;
+}
+
+/** True when we want a tower that costs wood and don't have enough yet. */
+function needsWoodToPlaceTowers(snap: AutoplaySnapshot): boolean {
+  if (!wantsMoreTowers(snap)) {
+    return false;
+  }
+
+  const typeId = nextTowerToPlace(snap);
+  const woodCost = getTowerWoodCost(typeId);
+  if (woodCost <= 0) {
+    return false;
+  }
+
+  return (
+    snap.gold >= getTowerStats(typeId).cost && snap.wood < woodCost
+  );
+}
+
+/** True when we want a tower that costs iron and don't have enough yet. */
+function needsIronToPlaceTowers(snap: AutoplaySnapshot): boolean {
+  if (!wantsMoreTowers(snap)) {
+    return false;
+  }
+
+  const typeId = nextTowerToPlace(snap);
+  const ironCost = getTowerIronCost(typeId);
+  if (ironCost <= 0) {
+    return false;
+  }
+
+  return (
+    snap.gold >= getTowerStats(typeId).cost && snap.iron < ironCost
+  );
+}
+
 function desiredBuildablePlots(snap: AutoplaySnapshot): number {
   return Math.min(18, desiredTowerCount(snap) + 2);
 }
@@ -274,6 +319,8 @@ function pendingEconomyTiles(snap: AutoplaySnapshot): number {
       count += 1;
     } else if (kind === "pond" && !snap.fishingHutKeys.has(key)) {
       count += 1;
+    } else if (kind === "lumber" && !snap.lumberMillKeys.has(key)) {
+      count += 1;
     } else if (kind === "fertile" && !snap.farmKeys.has(key)) {
       count += 1;
     }
@@ -282,7 +329,12 @@ function pendingEconomyTiles(snap: AutoplaySnapshot): number {
 }
 
 function builtEconomyCount(snap: AutoplaySnapshot): number {
-  return snap.builtMineKeys.size + snap.farmKeys.size + snap.fishingHutKeys.size;
+  return (
+    snap.builtMineKeys.size +
+    snap.farmKeys.size +
+    snap.lumberMillKeys.size +
+    snap.fishingHutKeys.size
+  );
 }
 
 function wantsMapExpansion(snap: AutoplaySnapshot): boolean {
@@ -319,12 +371,15 @@ function goldReservedForTowers(snap: AutoplaySnapshot): number {
 
 function pickWeightedTower(
   gold: number,
+  wood: number,
+  iron: number,
   waveLevel: number,
   excludeTypeIds: ReadonlySet<TowerTypeId> = new Set(),
 ): TowerTypeId | null {
   const affordable = TOWER_TYPE_IDS.filter(
     (typeId) =>
-      getTowerStats(typeId).cost <= gold && !excludeTypeIds.has(typeId),
+      canAffordTowerPlace(typeId, gold, wood, iron) &&
+      !excludeTypeIds.has(typeId),
   );
   if (affordable.length === 0) {
     return null;
@@ -492,6 +547,12 @@ function findBuildAction(snap: AutoplaySnapshot): AutoplayAction | null {
       }
     }
 
+    if (kind === "lumber" && !snap.lumberMillKeys.has(key)) {
+      if (snap.gold >= LUMBER_MILL_COST) {
+        return { type: "buildLumberMill", gx: coord.gx, gz: coord.gz };
+      }
+    }
+
     if (kind === "fertile" && !snap.farmKeys.has(key)) {
       if (
         canAffordFarm({
@@ -505,6 +566,22 @@ function findBuildAction(snap: AutoplaySnapshot): AutoplayAction | null {
     }
   }
 
+  return null;
+}
+
+function findIronMineBuild(snap: AutoplaySnapshot): AutoplayAction | null {
+  for (const [key, kind] of snap.revealedTiles) {
+    if (kind !== "ironDeposit" || snap.builtMineKeys.has(key)) {
+      continue;
+    }
+    const coord = parseKey(key);
+    if (!coord) {
+      continue;
+    }
+    if (snap.gold >= IRON_MINE_COST) {
+      return { type: "buildMine", kind: "iron", gx: coord.gx, gz: coord.gz };
+    }
+  }
   return null;
 }
 
@@ -564,12 +641,12 @@ function findPlaceTower(snap: AutoplaySnapshot): AutoplayAction | null {
   let typeId: TowerTypeId | null;
 
   if (saveFor) {
-    if (snap.gold < getTowerStats(saveFor).cost) {
+    if (!canAffordTowerPlace(saveFor, snap.gold, snap.wood, snap.iron)) {
       return null;
     }
     typeId = saveFor;
   } else {
-    typeId = pickWeightedTower(snap.gold, snap.waveLevel);
+    typeId = pickWeightedTower(snap.gold, snap.wood, snap.iron, snap.waveLevel);
   }
 
   if (!typeId) {
@@ -665,6 +742,24 @@ export function chooseAutoplayAction(
       }
     }
 
+    if (needsWoodToPlaceTowers(snap)) {
+      const cutForWood = findCuttableTree(snap);
+      if (cutForWood) {
+        return cutForWood;
+      }
+    }
+
+    if (needsIronToPlaceTowers(snap)) {
+      const ironMine = findIronMineBuild(snap);
+      if (ironMine) {
+        return ironMine;
+      }
+      const expandForIron = findCuttableTree(snap, goldReservedForTowers(snap));
+      if (expandForIron) {
+        return expandForIron;
+      }
+    }
+
     const tower = findPlaceTower(snap);
     if (tower) {
       return tower;
@@ -676,7 +771,8 @@ export function chooseAutoplayAction(
     }
 
     if (
-      snap.gold < getTowerStats(CHEAP_TOWER_ID).cost &&
+      needsWoodToPlaceTowers(snap) ||
+      needsIronToPlaceTowers(snap) ||
       countInRangeTowerPlots(snap) === 0
     ) {
       const expand = findCuttableTree(snap);

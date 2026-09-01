@@ -24,6 +24,15 @@ export type TowerStats = {
   damage: number;
   damageType: DamageType;
   cost: number;
+  /** Extra iron to place this tower (0 if omitted). */
+  ironCost?: number;
+  /** Extra wood to place this tower (0 if omitted). */
+  woodCost?: number;
+};
+
+export type TowerPlaceResourceCost = {
+  resource: "gold" | "iron" | "wood";
+  amount: number;
 };
 
 export const TOWER_TYPE_IDS: TowerTypeId[] = [
@@ -52,6 +61,8 @@ export const TOWER_TYPES: Record<TowerTypeId, TowerStats> = {
     damage: 22,
     damageType: "physical",
     cost: 60,
+    ironCost: 20,
+    woodCost: 20,
   },
   archer: {
     id: "archer",
@@ -63,9 +74,10 @@ export const TOWER_TYPES: Record<TowerTypeId, TowerStats> = {
     attackCooldown: 1,
     projectileSpeed: 22,
     projectileAoeTiles: 0,
-    damage: 6,
+    damage: 2,
     damageType: "physical",
-    cost: 10,
+    cost: 2,
+    woodCost: 2,
   },
   ballista: {
     id: "ballista",
@@ -80,6 +92,8 @@ export const TOWER_TYPES: Record<TowerTypeId, TowerStats> = {
     damage: 42,
     damageType: "physical",
     cost: 45,
+    ironCost: 15,
+    woodCost: 15,
   },
   mage: {
     id: "mage",
@@ -94,11 +108,52 @@ export const TOWER_TYPES: Record<TowerTypeId, TowerStats> = {
     damage: 9,
     damageType: "fire",
     cost: 30,
+    ironCost: 10,
+    woodCost: 10,
   },
 };
 
 export function getTowerStats(typeId: TowerTypeId): TowerStats {
   return TOWER_TYPES[typeId];
+}
+
+export function getTowerIronCost(typeId: TowerTypeId): number {
+  return getTowerStats(typeId).ironCost ?? 0;
+}
+
+export function getTowerWoodCost(typeId: TowerTypeId): number {
+  return getTowerStats(typeId).woodCost ?? 0;
+}
+
+export function getTowerPlaceCosts(
+  typeId: TowerTypeId,
+): TowerPlaceResourceCost[] {
+  const stats = getTowerStats(typeId);
+  const costs: TowerPlaceResourceCost[] = [
+    { resource: "gold", amount: stats.cost },
+  ];
+  const ironCost = getTowerIronCost(typeId);
+  const woodCost = getTowerWoodCost(typeId);
+  if (ironCost > 0) {
+    costs.push({ resource: "iron", amount: ironCost });
+  }
+  if (woodCost > 0) {
+    costs.push({ resource: "wood", amount: woodCost });
+  }
+  return costs;
+}
+
+export function canAffordTowerPlace(
+  typeId: TowerTypeId,
+  gold: number,
+  wood: number,
+  iron: number,
+): boolean {
+  return (
+    gold >= getTowerStats(typeId).cost &&
+    wood >= getTowerWoodCost(typeId) &&
+    iron >= getTowerIronCost(typeId)
+  );
 }
 
 export function canTowerTargetMovement(

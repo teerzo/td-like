@@ -19,6 +19,7 @@ export type RevealedTileKind =
   | "ironDeposit"
   | "pond"
   | "fertile"
+  | "lumber"
   | "hill"
   | "rock"
   | "mountain";
@@ -44,8 +45,27 @@ const REVEAL_WEIGHTS: { kind: RevealedTileKind; weight: number }[] = [
   { kind: "ironDeposit", weight: 8 },
   { kind: "pond", weight: 8 },
   { kind: "fertile", weight: 8 },
+  { kind: "lumber", weight: 8 },
   { kind: "mountain", weight: 4 },
 ];
+
+/** Hidden types assigned to main-grid forest before trees are cut. Rest is grass. */
+export const MAIN_FOREST_SEED_QUOTA: { kind: RevealedTileKind; count: number }[] =
+  [
+    { kind: "fertile", count: 3 },
+    { kind: "goldDeposit", count: 3 },
+    { kind: "ironDeposit", count: 3 },
+    { kind: "pond", count: 3 },
+    { kind: "lumber", count: 3 },
+    { kind: "rock", count: 5 },
+    { kind: "hill", count: 5 },
+    { kind: "mountain", count: 5 },
+  ];
+
+export const MAIN_FOREST_SEED_SPECIAL_COUNT = MAIN_FOREST_SEED_QUOTA.reduce(
+  (sum, entry) => sum + entry.count,
+  0,
+);
 
 /** Tile is dirt road or within one cardinal step of a dirt road. */
 export function isRoadClearanceTile(
@@ -240,6 +260,132 @@ export function collectBuildPlotForestKeys(
   }
 
   return keys;
+}
+
+function hash01(x: number, z: number, salt: number) {
+  const n = Math.sin(x * 127.1 + z * 311.7 + salt * 74.3) * 43758.5453;
+  return n - Math.floor(n);
+}
+
+function parseCoordKey(key: string): { x: number; z: number } | null {
+  const [a, b] = key.split(":");
+  const x = Number(a);
+  const z = Number(b);
+  if (!Number.isFinite(x) || !Number.isFinite(z)) {
+    return null;
+  }
+  return { x, z };
+}
+
+function layoutRevealSalt(layout: WorldLayout, origin: ChunkOrigin) {
+  return (
+    layout.size * 91 +
+    layout.castle.x * 53 +
+    layout.castle.z * 29 +
+    layout.entrance.x * 17 +
+    layout.entrance.z * 41 +
+    origin.gx * 13 +
+    origin.gz * 19
+  );
+}
+
+/** Chebyshev distance from a global forest key to the nearest dirt road tile. */
+function minChebyshevToDirt(
+  layout: WorldLayout,
+  origin: ChunkOrigin,
+  globalKey: string,
+): number {
+  const coord = parseCoordKey(globalKey);
+  if (!coord) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const localX = coord.x - origin.gx;
+  const localZ = coord.z - origin.gz;
+  let best = Number.POSITIVE_INFINITY;
+
+  for (const roadKey of layout.roadKeys) {
+    const road = parseCoordKey(roadKey);
+    if (!road) {
+      continue;
+    }
+    const dist = Math.max(Math.abs(localX - road.x), Math.abs(localZ - road.z));
+    if (dist < best) {
+      best = dist;
+    }
+  }
+
+  return best;
+}
+
+function shuffleKeysByHash(
+  keys: readonly string[],
+  salt: number,
+): string[] {
+  return [...keys].sort((a, b) => {
+    const coordA = parseCoordKey(a);
+    const coordB = parseCoordKey(b);
+    const hashA = coordA ? hash01(coordA.x, coordA.z, salt) : 0;
+    const hashB = coordB ? hash01(coordB.x, coordB.z, salt) : 0;
+    const delta = hashA - hashB;
+    return delta !== 0 ? delta : a.localeCompare(b);
+  });
+}
+
+/**
+ * Assigns a hidden reveal type to every forest tile on the main grid.
+ * Special counts come from `MAIN_FOREST_SEED_QUOTA`; remaining tiles are grass.
+ * Hills are placed on the forest tiles closest to dirt roads.
+ */
+export function seedMainForestReveals(
+  layout: WorldLayout,
+  origin: ChunkOrigin,
+): ReadonlyMap<string, RevealedTileKind> {
+  const keys = collectStandingForestKeys(layout, origin);
+  const salt = layoutRevealSalt(layout, origin);
+  const hillCount =
+    MAIN_FOREST_SEED_QUOTA.find((entry) => entry.kind === "hill")?.count ?? 0;
+
+  const hillKeys = [...keys]
+    .sort((a, b) => {
+      const distA = minChebyshevToDirt(layout, origin, a);
+      const distB = minChebyshevToDirt(layout, origin, b);
+      if (distA !== distB) {
+        return distA - distB;
+      }
+      const coordA = parseCoordKey(a);
+      const coordB = parseCoordKey(b);
+      const hashA = coordA ? hash01(coordA.x, coordA.z, salt + 19) : 0;
+      const hashB = coordB ? hash01(coordB.x, coordB.z, salt + 19) : 0;
+      const delta = hashA - hashB;
+      return delta !== 0 ? delta : a.localeCompare(b);
+    })
+    .slice(0, Math.min(hillCount, keys.length));
+  const hillKeySet = new Set(hillKeys);
+
+  const remaining = shuffleKeysByHash(
+    keys.filter((key) => !hillKeySet.has(key)),
+    salt,
+  );
+
+  const otherKinds: RevealedTileKind[] = [];
+  for (const { kind, count } of MAIN_FOREST_SEED_QUOTA) {
+    if (kind === "hill") {
+      continue;
+    }
+    for (let i = 0; i < count; i += 1) {
+      otherKinds.push(kind);
+    }
+  }
+
+  const map = new Map<string, RevealedTileKind>();
+  for (const key of hillKeys) {
+    map.set(key, "hill");
+  }
+  for (let index = 0; index < remaining.length; index += 1) {
+    map.set(remaining[index]!, otherKinds[index] ?? "grass");
+  }
+  return map;
 }
 
 export function rollTreeReveal(gx: number, gz: number): RevealedTileKind {

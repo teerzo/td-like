@@ -10,12 +10,12 @@ import {
 /** Gold granted by the gold mine when a wave/level is cleared. */
 export const GOLD_MINE_INCOME = 5;
 /** Gold cost to build on a gold deposit. */
-export const GOLD_MINE_COST = 40;
+export const GOLD_MINE_COST = 20;
 
 /** Iron granted by the iron mine when a wave/level is cleared. */
 export const IRON_MINE_INCOME = 5;
 /** Gold cost to build on an iron deposit. */
-export const IRON_MINE_COST = 50;
+export const IRON_MINE_COST = 5;
 
 export const STARTING_IRON = 0;
 

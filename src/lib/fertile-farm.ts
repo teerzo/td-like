@@ -11,9 +11,9 @@ import type { ChunkOrigin } from "@/lib/global-grid";
 
 /** Resource cost to place a farm on fertile dirt. */
 export const FARM_COST = {
-  gold: 50,
-  iron: 50,
-  wood: 50,
+  gold: 20,
+  iron: 20,
+  wood: 20,
 } as const;
 
 export function canAffordFarm(resources: {

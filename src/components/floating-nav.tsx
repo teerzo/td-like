@@ -10,7 +10,6 @@ import { FreezeMapToggle } from "@/components/game/freeze-map-toggle";
 import { useGameSettings } from "@/components/game/game-settings-provider";
 import { LevelHud } from "@/components/game/level-hud";
 import { usePlayHud, type PlayHudState } from "@/components/game/play-hud-provider";
-import { PlayPerfToggles } from "@/components/game/play-perf-toggles";
 import { ResourcesHud } from "@/components/game/resources-hud";
 import { LoginForm } from "@/components/login-form";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -93,8 +92,6 @@ export function FloatingNav() {
             </div>
           </div>
         ) : null}
-
-        <PlayPerfToggles />
       </nav>
 
       {isPlayPage ? (

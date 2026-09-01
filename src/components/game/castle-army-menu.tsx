@@ -1,16 +1,27 @@
 "use client";
 
 import { Feather, Heart, Shield, SportShoe } from "lucide-react";
-import type { ReactNode } from "react";
 
 import {
   BuildIconPreview,
 } from "@/components/game/build-action-menu";
 import { EnemyModel } from "@/components/game/models";
-import { ResourceIcon, type ResourceId } from "@/components/game/resource-icon";
+import {
+  PortraitCard,
+  PortraitCostRow,
+  PortraitStatCell,
+} from "@/components/game/portrait-card";
+import { ResourceAmount, ResourceCostRow, ResourceIcon } from "@/components/game/resource-icon";
+import { computeWaveFoodReward, computeWaveGoldReward } from "@/components/game/wave-clear-modal";
+import { FARM_INCOME } from "@/lib/fertile-farm";
+import { FISHING_HUT_INCOME } from "@/lib/fishing-hut";
+import { GOLD_MINE_INCOME, IRON_MINE_INCOME } from "@/lib/gold-mine";
+import { LUMBER_MILL_INCOME } from "@/lib/lumber-mill";
 import { getEnemyStats, type EnemyMovementType } from "@/lib/enemy-types";
 import {
+  ARMY_UNIT_GOLD_INCOME,
   ARMY_UNIT_IDS,
+  armyGoldIncome,
   armyTotal,
   canAffordUnit,
   getUnitCostLines,
@@ -32,29 +43,18 @@ type CastleArmyMenuProps = {
   wood: number;
   stone: number;
   food: number;
+  waveLevel: number;
+  farmCount: number;
+  lumberMillCount: number;
+  fishingHutCount: number;
+  goldMineCount: number;
+  ironMineCount: number;
   isDay: boolean;
-  raidStatus: string | null;
   onRecruit: (unitId: ArmyUnitId) => void;
   onClear: () => void;
   onSendAttack: () => void;
   onClose: () => void;
 };
-
-function PortraitStatCell({
-  className,
-  children,
-}: {
-  className?: string;
-  children: ReactNode;
-}) {
-  return (
-    <div
-      className={`flex flex-1 items-center justify-center gap-0.5 py-1.5 text-xs font-bold tabular-nums ${className ?? ""}`}
-    >
-      {children}
-    </div>
-  );
-}
 
 function EnemyMovementIcon({
   movementType,
@@ -74,14 +74,6 @@ function EnemyMovementIcon({
   );
 }
 
-const RESOURCE_CELL_STYLE: Record<ResourceId, string> = {
-  gold: "bg-amber-500/10 text-amber-300",
-  iron: "bg-slate-500/10 text-slate-300",
-  wood: "bg-lime-500/10 text-lime-400",
-  stone: "bg-stone-500/10 text-stone-300",
-  food: "bg-orange-500/10 text-orange-300",
-};
-
 const MOVEMENT_CELL_STYLE: Record<EnemyMovementType, string> = {
   flying: "bg-sky-500/10 text-sky-200",
   ground: "bg-amber-500/10 text-amber-200",
@@ -95,14 +87,35 @@ export function CastleArmyMenu({
   wood,
   stone,
   food,
+  waveLevel,
+  farmCount,
+  lumberMillCount,
+  fishingHutCount,
+  goldMineCount,
+  ironMineCount,
   isDay,
-  raidStatus,
   onRecruit,
   onClear,
   onSendAttack,
   onClose,
 }: CastleArmyMenuProps) {
   const total = armyTotal(army);
+  const armyGold = armyGoldIncome(army);
+  const waveFood = computeWaveFoodReward(waveLevel);
+  const waveGold = computeWaveGoldReward(waveLevel);
+  const buildingFood =
+    FARM_INCOME * farmCount + FISHING_HUT_INCOME * fishingHutCount;
+  const buildingGold = GOLD_MINE_INCOME * goldMineCount;
+  const buildingIron = IRON_MINE_INCOME * ironMineCount;
+  const buildingWood = LUMBER_MILL_INCOME * lumberMillCount;
+  const buildingYields = [
+    buildingFood > 0 ? { resource: "food" as const, amount: buildingFood, gain: true } : null,
+    buildingGold > 0 ? { resource: "gold" as const, amount: buildingGold, gain: true } : null,
+    buildingIron > 0 ? { resource: "iron" as const, amount: buildingIron, gain: true } : null,
+    buildingWood > 0 ? { resource: "wood" as const, amount: buildingWood, gain: true } : null,
+  ].filter((line): line is NonNullable<typeof line> => line !== null);
+  const totalFood = waveFood + buildingFood;
+  const totalGold = waveGold + armyGold + buildingGold;
   const canSend = isDay && total > 0;
   const canClear = isDay && total > 0;
   const resources = { gold, iron, wood, stone, food };
@@ -157,114 +170,140 @@ export function CastleArmyMenu({
 
             return (
               <div key={unitId} className="flex flex-col gap-1">
-                <div className="flex flex-col overflow-hidden rounded-xl border border-white/15 bg-gradient-to-b from-[#1a2332]/95 to-[#0e121a]/95 shadow-[0_4px_16px_rgba(0,0,0,0.35)]">
-                  <div className="flex border-b border-white/10">
-                    <PortraitStatCell className="border-r border-white/10 bg-rose-500/10 text-rose-300">
-                      <Heart
-                        aria-hidden
-                        className="fill-rose-400 text-rose-400"
-                        size={11}
-                        strokeWidth={1.75}
-                      />
-                      {stats.health}
-                    </PortraitStatCell>
-                    <PortraitStatCell className="bg-sky-500/10 text-sky-200">
-                      <Shield
-                        aria-hidden
-                        className="fill-sky-300 text-sky-300"
-                        size={11}
-                        strokeWidth={1.75}
-                      />
-                      {stats.armor}
-                    </PortraitStatCell>
-                  </div>
-
-                  <div className="flex border-b border-white/10">
-                    <PortraitStatCell
-                      className={`gap-1 ${MOVEMENT_CELL_STYLE[stats.movementType]}`}
-                    >
-                      <EnemyMovementIcon movementType={stats.movementType} />
-                      {stats.label}
-                    </PortraitStatCell>
-                  </div>
-
-                  <button
-                    type="button"
-                    disabled={recruitDisabled}
-                    title={
-                      !isDay
-                        ? "Recruit during the day"
-                        : affordable
-                          ? `Recruit ${stats.label}`
-                          : needHint
-                    }
-                    aria-label={
-                      affordable && isDay
+                <PortraitCard
+                  disabled={recruitDisabled}
+                  title={
+                    !isDay
+                      ? "Recruit during the day"
+                      : affordable
                         ? `Recruit ${stats.label}`
-                        : `Cannot recruit ${stats.label}`
-                    }
-                    className="group relative aspect-[4/5] w-full transition enabled:cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
-                    onClick={() => onRecruit(unitId)}
-                  >
-                    <div className="absolute inset-0 overflow-hidden bg-[#121820] transition group-enabled:group-hover:bg-[#182030]">
-                      <BuildIconPreview
-                        cameraPosition={
-                          unitId === "dragon" || unitId === "catapult"
-                            ? [2.0, 1.6, 2.0]
-                            : [1.4, 1.35, 1.4]
-                        }
-                      >
-                        <EnemyModel typeId={unitId} />
-                      </BuildIconPreview>
-                    </div>
-                    <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/5 transition group-enabled:group-hover:ring-amber-400/30" />
-                  </button>
-
-                  <div className="flex border-t border-white/10">
-                    <PortraitStatCell
-                      className={`border-r border-white/10 ${
-                        foodCost
-                          ? RESOURCE_CELL_STYLE[foodCost.resource]
-                          : "bg-white/5"
-                      }`}
-                    >
-                      {foodCost ? (
-                        <>
-                          <ResourceIcon resource={foodCost.resource} size={11} />
-                          {foodCost.amount}
-                        </>
-                      ) : null}
-                    </PortraitStatCell>
-                    <PortraitStatCell
-                      className={
-                        extraCost
-                          ? RESOURCE_CELL_STYLE[extraCost.resource]
-                          : RESOURCE_CELL_STYLE.food
-                      }
-                    >
-                      {extraCost ? (
-                        <>
-                          <ResourceIcon resource={extraCost.resource} size={11} />
-                          {extraCost.amount}
-                        </>
-                      ) : (
-                        <span
-                          className="invisible inline-flex items-center gap-0.5"
-                          aria-hidden
+                        : needHint
+                  }
+                  ariaLabel={
+                    affordable && isDay
+                      ? `Recruit ${stats.label}`
+                      : `Cannot recruit ${stats.label}`
+                  }
+                  header={
+                    <>
+                      <div className="flex border-b border-white/10">
+                        <PortraitStatCell className="border-r border-white/10 bg-rose-500/10 text-rose-300">
+                          <Heart
+                            aria-hidden
+                            className="fill-rose-400 text-rose-400"
+                            size={11}
+                            strokeWidth={1.75}
+                          />
+                          {stats.health}
+                        </PortraitStatCell>
+                        <PortraitStatCell className="bg-sky-500/10 text-sky-200">
+                          <Shield
+                            aria-hidden
+                            className="fill-sky-300 text-sky-300"
+                            size={11}
+                            strokeWidth={1.75}
+                          />
+                          {stats.armor}
+                        </PortraitStatCell>
+                      </div>
+                      <div className="flex border-b border-white/10">
+                        <PortraitStatCell
+                          className={`gap-1 ${MOVEMENT_CELL_STYLE[stats.movementType]}`}
                         >
-                          <ResourceIcon resource="food" size={11} />
-                          0
-                        </span>
-                      )}
-                    </PortraitStatCell>
-                  </div>
-                </div>
+                          <EnemyMovementIcon movementType={stats.movementType} />
+                          {stats.label}
+                        </PortraitStatCell>
+                      </div>
+                    </>
+                  }
+                  footer={
+                    <PortraitCostRow
+                      costs={[
+                        foodCost,
+                        extraCost,
+                        {
+                          resource: "gold",
+                          amount: ARMY_UNIT_GOLD_INCOME[unitId],
+                          gain: true,
+                        },
+                      ]}
+                    />
+                  }
+                  onSelect={() => onRecruit(unitId)}
+                >
+                  <BuildIconPreview
+                    cameraPosition={
+                      unitId === "dragon" || unitId === "catapult"
+                        ? [2.0, 1.6, 2.0]
+                        : [1.4, 1.35, 1.4]
+                    }
+                  >
+                    <EnemyModel typeId={unitId} />
+                  </BuildIconPreview>
+                </PortraitCard>
                 <div className="text-center text-xs font-bold tabular-nums text-emerald-400">
                   x{army[unitId]}
                 </div>
               </div>
             );
           })}
+          </div>
+        </div>
+
+        <div className="mt-3 flex shrink-0 items-center justify-center gap-4 text-xs font-bold tabular-nums">
+          <span className="text-emerald-400">x{total}</span>
+          <span className="inline-flex items-center gap-0.5 text-amber-300">
+            <ResourceIcon resource="gold" size={11} />
+            {armyGold}
+          </span>
+        </div>
+
+        <div className="mt-3 shrink-0 rounded-xl border border-amber-400/20 bg-black/20 px-3 py-2">
+          <div className="text-center text-[10px] font-medium tracking-wide text-amber-200/55 uppercase">
+            Wave end income
+          </div>
+          <div className="mt-1.5 flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
+            <span className="inline-flex items-center gap-1">
+              <span className="text-[10px] text-amber-200/50">Level</span>
+              <ResourceAmount resource="food" amount={waveFood} gain />
+              <ResourceAmount resource="gold" amount={waveGold} gain />
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span className="text-[10px] text-amber-200/50">Builds</span>
+              {buildingYields.length > 0 ? (
+                <ResourceCostRow costs={buildingYields} />
+              ) : (
+                <span className="text-[10px] text-amber-200/40">—</span>
+              )}
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span className="text-[10px] text-amber-200/50">Army</span>
+              <ResourceAmount resource="gold" amount={armyGold} gain />
+            </span>
+          </div>
+          <div className="mt-1.5 flex flex-wrap items-center justify-center gap-3">
+            {totalFood > 0 ? (
+              <ResourceAmount resource="food" amount={totalFood} gain size="md" />
+            ) : null}
+            {totalGold > 0 ? (
+              <ResourceAmount resource="gold" amount={totalGold} gain size="md" />
+            ) : null}
+            {buildingIron > 0 ? (
+              <ResourceAmount
+                resource="iron"
+                amount={buildingIron}
+                gain
+                size="md"
+              />
+            ) : null}
+            {buildingWood > 0 ? (
+              <ResourceAmount
+                resource="wood"
+                amount={buildingWood}
+                gain
+                size="md"
+              />
+            ) : null}
           </div>
         </div>
 
@@ -287,11 +326,6 @@ export function CastleArmyMenu({
               Send Attack
             </button>
           </div>
-          {raidStatus ? (
-            <p className="text-center text-sm text-emerald-300/90" aria-live="polite">
-              {raidStatus}
-            </p>
-          ) : null}
         </div>
       </div>
     </>

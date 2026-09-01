@@ -3,16 +3,18 @@
 import { BuildIconPreview } from "@/components/game/build-action-menu";
 import { EnemyModel } from "@/components/game/models";
 import { ResourceAmount } from "@/components/game/resource-icon";
-import { ARMY_UNIT_COSTS, isArmyUnitId } from "@/lib/army-types";
 import { ENEMY_TYPE_IDS, getEnemyStats, type EnemyTypeId } from "@/lib/enemy-types";
 
 export type WaveClearModalState = {
   kills: Partial<Record<EnemyTypeId, number>>;
   leaks: Partial<Record<EnemyTypeId, number>>;
   foodReward: number;
+  waveGold: number;
+  armyGold: number;
   buildingGold: number;
   buildingIron: number;
   buildingFood: number;
+  buildingWood: number;
 };
 
 function enemyCountEntries(counts: Partial<Record<EnemyTypeId, number>>) {
@@ -78,10 +80,12 @@ export function WaveClearModal({ result, onAccept }: WaveClearModalProps) {
   const killEntries = enemyCountEntries(result.kills);
 
   const totalFood = result.foodReward + result.buildingFood;
+  const totalGold = result.waveGold + result.armyGold + result.buildingGold;
   const hasBuildingYield =
     result.buildingGold > 0 ||
     result.buildingIron > 0 ||
-    result.buildingFood > 0;
+    result.buildingFood > 0 ||
+    result.buildingWood > 0;
 
   return (
     <>
@@ -123,10 +127,10 @@ export function WaveClearModal({ result, onAccept }: WaveClearModalProps) {
               size="md"
             />
           ) : null}
-          {result.buildingGold > 0 ? (
+          {totalGold > 0 ? (
             <ResourceAmount
               resource="gold"
-              amount={result.buildingGold}
+              amount={totalGold}
               gain
               size="md"
             />
@@ -135,6 +139,14 @@ export function WaveClearModal({ result, onAccept }: WaveClearModalProps) {
             <ResourceAmount
               resource="iron"
               amount={result.buildingIron}
+              gain
+              size="md"
+            />
+          ) : null}
+          {result.buildingWood > 0 ? (
+            <ResourceAmount
+              resource="wood"
+              amount={result.buildingWood}
               gain
               size="md"
             />
@@ -158,21 +170,13 @@ export function WaveClearModal({ result, onAccept }: WaveClearModalProps) {
 }
 
 /**
- * Wave food reward: sum of killed units' recruit food costs, plus `1 × waveLevel`.
- * Non-army types (debug spawns) contribute 0 to the cost sum.
+ * Wave-end food: `3 × waveLevel`, independent of kills.
  */
-export function computeWaveFoodReward(
-  kills: Partial<Record<EnemyTypeId, number>>,
-  waveLevel: number,
-): number {
-  let costTotal = 0;
-  for (const [typeId, count] of Object.entries(kills)) {
-    if (!count || count <= 0) {
-      continue;
-    }
-    const id = typeId as EnemyTypeId;
-    const cost = isArmyUnitId(id) ? ARMY_UNIT_COSTS[id].food : 0;
-    costTotal += count * cost;
-  }
-  return costTotal + Math.max(1, waveLevel);
+export function computeWaveFoodReward(waveLevel: number): number {
+  return 3 * Math.max(1, waveLevel);
+}
+
+/** Wave-end gold: `10 × waveLevel`, independent of kills. */
+export function computeWaveGoldReward(waveLevel: number): number {
+  return 10 * Math.max(1, waveLevel);
 }

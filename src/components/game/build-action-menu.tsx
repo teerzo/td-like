@@ -12,11 +12,17 @@ import {
   ResourceCostRow,
   type ResourceCostLine,
 } from "@/components/game/resource-icon";
+import {
+  TOWER_POPUP_CARD_WIDTH,
+  PortraitCard,
+} from "@/components/game/portrait-card";
 
 export const BUILD_ICON_SIZE = 72;
 export const BUILD_RING_RADIUS = 78;
 const CLOSE_BUTTON_SIZE = 40;
 const CLOSE_BUTTON_OFFSET = BUILD_RING_RADIUS;
+const CARD_CLOSE_SIZE = 32;
+const CARD_ROW_GAP = 16;
 
 type BuildActionMenuProps = {
   clientX: number;
@@ -27,6 +33,8 @@ type BuildActionMenuProps = {
   onActionHover?: (actionId: string | null) => void;
   /** Evenly space portraits across the upper semicircle (tower menus). */
   portraitArc?: "topHalf";
+  /** Rectangular army-style cards instead of circular icons. */
+  portraitStyle?: "circle" | "card";
 };
 
 export type BuildActionItem = {
@@ -46,6 +54,10 @@ export type BuildActionItem = {
   showCostBadge?: boolean;
   /** Shown in a floating panel while hovering the icon. */
   hoverContent?: ReactNode;
+  /** Stat rows above the 3D preview (card portraits). */
+  cardHeader?: ReactNode;
+  /** Cost / meta row below the 3D preview (card portraits). */
+  cardFooter?: ReactNode;
 };
 
 function anglesForCount(count: number): number[] {
@@ -139,9 +151,20 @@ export function BuildIconPreview({
 
 export const BuildActionMenu = forwardRef<HTMLDivElement, BuildActionMenuProps>(
   function BuildActionMenu(
-    { clientX, clientY, closeLabel, onClose, actions, onActionHover, portraitArc },
+    {
+      clientX,
+      clientY,
+      closeLabel,
+      onClose,
+      actions,
+      onActionHover,
+      portraitArc,
+      portraitStyle = "circle",
+    },
     ref,
   ) {
+    const isCard = portraitStyle === "card";
+    const closeSize = isCard ? CARD_CLOSE_SIZE : CLOSE_BUTTON_SIZE;
     const angles =
       portraitArc === "topHalf"
         ? anglesForTopHalf(actions.length)
@@ -167,48 +190,69 @@ export const BuildActionMenu = forwardRef<HTMLDivElement, BuildActionMenuProps>(
         role="menu"
         aria-label={closeLabel}
       >
-        {actions.map((action, index) => {
-          const angleRad = ((angles[index] ?? -90) * Math.PI) / 180;
-          const x = Math.cos(angleRad) * BUILD_RING_RADIUS;
-          const y = Math.sin(angleRad) * BUILD_RING_RADIUS;
-          const disabled = action.disabled || !action.canAfford;
-          const summary = costSummary(action);
-          const multiCost = (action.costs?.length ?? 0) > 1;
-          const showCostBadge = action.showCostBadge ?? !action.hoverContent;
+        {isCard ? (
+          <div
+            className="absolute left-0 flex -translate-x-1/2 -translate-y-full items-end gap-1.5"
+            style={{ top: -CARD_ROW_GAP }}
+          >
+            {actions.map((action) => {
+              const disabled = action.disabled || !action.canAfford;
+              const summary = costSummary(action);
+              const label = `${action.label}${summary ? ` — ${summary}` : ""}`;
 
-          return (
-            <div
-              key={action.id}
-              className="group pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2"
-              style={{
-                width: BUILD_ICON_SIZE,
-                height: BUILD_ICON_SIZE,
-                left: x,
-                top: y,
-              }}
-            >
-              {action.hoverContent ? (
-                <div className="pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 z-50 -translate-x-1/2 scale-95 opacity-0 transition duration-150 group-hover:scale-100 group-hover:opacity-100 group-focus-within:scale-100 group-focus-within:opacity-100">
-                  {action.hoverContent}
+              return (
+                <div
+                  key={action.id}
+                  className="group pointer-events-auto"
+                  style={{ width: TOWER_POPUP_CARD_WIDTH }}
+                  onPointerEnter={() => {
+                    onActionHover?.(action.id);
+                  }}
+                  onPointerLeave={() => {
+                    onActionHover?.(null);
+                  }}
+                >
+                  {action.hoverContent ? (
+                    <div className="pointer-events-none absolute bottom-[calc(100%+8px)] left-1/2 z-50 -translate-x-1/2 scale-95 opacity-0 transition duration-150 group-hover:scale-100 group-hover:opacity-100 group-focus-within:scale-100 group-focus-within:opacity-100">
+                      {action.hoverContent}
+                    </div>
+                  ) : null}
+                  <PortraitCard
+                    compact
+                    disabled={disabled}
+                    title={label}
+                    ariaLabel={label}
+                    role="menuitem"
+                    header={action.cardHeader}
+                    footer={action.cardFooter}
+                    onSelect={action.onSelect}
+                  >
+                    {action.preview}
+                  </PortraitCard>
                 </div>
-              ) : null}
-              <button
-                type="button"
-                role="menuitem"
-                title={`${action.label}${summary ? ` — ${summary}` : ""}`}
-                aria-label={`${action.label}${summary ? ` ${summary}` : ""}`}
-                disabled={disabled}
-                className={`flex h-full w-full items-center justify-center overflow-hidden rounded-full border-2 bg-[#1a2332]/95 shadow-[0_8px_24px_rgba(0,0,0,0.45)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${
-                  disabled
-                    ? "cursor-not-allowed border-white/30 opacity-45"
-                    : "border-white/80 hover:scale-110 hover:border-sky-300 hover:bg-[#243044]"
-                }`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  if (disabled) {
-                    return;
-                  }
-                  action.onSelect();
+              );
+            })}
+          </div>
+        ) : (
+          actions.map((action, index) => {
+            const angleRad = ((angles[index] ?? -90) * Math.PI) / 180;
+            const x = Math.cos(angleRad) * BUILD_RING_RADIUS;
+            const y = Math.sin(angleRad) * BUILD_RING_RADIUS;
+            const disabled = action.disabled || !action.canAfford;
+            const summary = costSummary(action);
+            const multiCost = (action.costs?.length ?? 0) > 1;
+            const showCostBadge = action.showCostBadge ?? !action.hoverContent;
+            const label = `${action.label}${summary ? ` — ${summary}` : ""}`;
+
+            return (
+              <div
+                key={action.id}
+                className="group pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2"
+                style={{
+                  width: BUILD_ICON_SIZE,
+                  height: BUILD_ICON_SIZE,
+                  left: x,
+                  top: y,
                 }}
                 onPointerEnter={() => {
                   onActionHover?.(action.id);
@@ -217,50 +261,75 @@ export const BuildActionMenu = forwardRef<HTMLDivElement, BuildActionMenuProps>(
                   onActionHover?.(null);
                 }}
               >
-                <div className="pointer-events-none h-full w-full">
-                  {action.preview}
-                </div>
-                {showCostBadge ? (
-                  <span
-                    className={`pointer-events-none absolute bottom-0.5 max-w-[90%] rounded-full bg-black/75 px-1 py-0.5 ${
-                      action.costTone === "refund"
-                        ? "text-emerald-300"
-                        : "text-amber-100"
-                    }`}
-                  >
-                    {action.costNote ? (
-                      <span className="text-[10px] font-semibold">
-                        {action.costNote}
-                      </span>
-                    ) : (
-                      <ResourceCostRow
-                        costs={action.costs ?? []}
-                        className={multiCost ? "flex-col gap-0.5" : ""}
-                      />
-                    )}
-                  </span>
+                {action.hoverContent ? (
+                  <div className="pointer-events-none absolute bottom-[calc(100%+10px)] left-1/2 z-50 -translate-x-1/2 scale-95 opacity-0 transition duration-150 group-hover:scale-100 group-hover:opacity-100 group-focus-within:scale-100 group-focus-within:opacity-100">
+                    {action.hoverContent}
+                  </div>
                 ) : null}
-              </button>
-            </div>
-          );
-        })}
+                <button
+                  type="button"
+                  role="menuitem"
+                  title={label}
+                  aria-label={label}
+                  disabled={disabled}
+                  className={`flex h-full w-full items-center justify-center overflow-hidden rounded-full border-2 bg-[#1a2332]/95 shadow-[0_8px_24px_rgba(0,0,0,0.45)] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${
+                    disabled
+                      ? "cursor-not-allowed border-white/30 opacity-45"
+                      : "border-white/80 hover:scale-110 hover:border-sky-300 hover:bg-[#243044]"
+                  }`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (disabled) {
+                      return;
+                    }
+                    action.onSelect();
+                  }}
+                >
+                  <div className="pointer-events-none h-full w-full">
+                    {action.preview}
+                  </div>
+                  {showCostBadge ? (
+                    <span
+                      className={`pointer-events-none absolute bottom-0.5 max-w-[90%] rounded-full bg-black/75 px-1 py-0.5 ${
+                        action.costTone === "refund"
+                          ? "text-emerald-300"
+                          : "text-amber-100"
+                      }`}
+                    >
+                      {action.costNote ? (
+                        <span className="text-[10px] font-semibold">
+                          {action.costNote}
+                        </span>
+                      ) : (
+                        <ResourceCostRow
+                          costs={action.costs ?? []}
+                          className={multiCost ? "flex-col gap-0.5" : ""}
+                        />
+                      )}
+                    </span>
+                  ) : null}
+                </button>
+              </div>
+            );
+          })
+        )}
         <button
           type="button"
           aria-label={closeLabel}
           title={closeLabel}
           className="pointer-events-auto absolute flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white/70 bg-[#1a2332]/95 text-white/85 shadow-[0_8px_24px_rgba(0,0,0,0.45)] transition hover:scale-110 hover:border-sky-300 hover:bg-[#243044] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
           style={{
-            width: CLOSE_BUTTON_SIZE,
-            height: CLOSE_BUTTON_SIZE,
+            width: closeSize,
+            height: closeSize,
             left: 0,
-            top: CLOSE_BUTTON_OFFSET,
+            top: isCard ? 0 : CLOSE_BUTTON_OFFSET,
           }}
           onClick={(event) => {
             event.stopPropagation();
             onClose();
           }}
         >
-          <X className="size-5" strokeWidth={2.5} aria-hidden />
+          <X className={isCard ? "size-4" : "size-5"} strokeWidth={2.5} aria-hidden />
         </button>
       </div>
     );

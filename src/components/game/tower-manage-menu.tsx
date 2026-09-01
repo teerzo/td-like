@@ -8,10 +8,8 @@ import {
   BuildIconPreview,
 } from "@/components/game/build-action-menu";
 import { TowerModel, TOWER_MENU_PREVIEW_CAMERA, TOWER_MENU_PREVIEW_POSITION } from "@/components/game/models";
-import { TowerMenuHoverDetails } from "@/components/game/tower-hover-card";
-import { TowerCombatStats } from "@/components/game/combat-stats-display";
-import { ResourceCostRow } from "@/components/game/resource-icon";
-import { formatTowerCounterHint } from "@/lib/combat-counters";
+import { PortraitCostRow } from "@/components/game/portrait-card";
+import { TowerCardHeader } from "@/components/game/tower-portrait";
 import {
   getTowerSellRefund,
   getTowerStatsAtLevel,
@@ -45,6 +43,7 @@ export const TowerManageMenu = forwardRef<HTMLDivElement, TowerManageMenuProps>(
     const sellRefund = getTowerSellRefund(menu.typeId, menu.level);
     const atMax = upgradeCost === null;
     const canAffordUpgrade = upgradeCost !== null && gold >= upgradeCost;
+    const nextLevel = (menu.level ?? 1) + 1;
 
     return (
       <BuildActionMenu
@@ -53,45 +52,34 @@ export const TowerManageMenu = forwardRef<HTMLDivElement, TowerManageMenuProps>(
         clientY={menu.clientY}
         closeLabel="Close tower menu"
         portraitArc="topHalf"
+        portraitStyle="card"
         onClose={onClose}
         actions={[
           {
             id: "upgrade",
             label: atMax
               ? `${stats.label} max level`
-              : `Upgrade ${stats.label} to Lv ${(menu.level ?? 1) + 1}`,
+              : `Upgrade ${stats.label} to Lv ${nextLevel}`,
             costs: atMax
               ? undefined
               : [{ resource: "gold", amount: upgradeCost! }],
             canAfford: atMax ? true : canAffordUpgrade,
             disabled: atMax,
-            showCostBadge: false,
-            hoverContent: (
-              <TowerMenuHoverDetails
-                name={stats.label}
-                targetMovement={stats.targetMovement}
-                targetPriority={stats.targetPriority}
-                subtitle={
-                  atMax
-                    ? `Max level (Lv ${menu.level})`
-                    : `Upgrade to Lv ${(menu.level ?? 1) + 1}`
-                }
-              >
-                {!atMax ? (
-                  <div className="mt-2">
-                    <ResourceCostRow
-                      costs={[{ resource: "gold", amount: upgradeCost! }]}
-                    />
-                  </div>
-                ) : null}
-                <p className="mt-2 text-white/70">
-                  {formatTowerCounterHint(stats.role)}
-                </p>
-                <TowerCombatStats stats={stats} />
-                <p className="mt-2 text-white/55">
-                  {stats.attackRangeTiles} range · {stats.attackCooldown}s
-                </p>
-              </TowerMenuHoverDetails>
+            cardHeader: (
+              <TowerCardHeader
+                stats={stats}
+                subtitle={atMax ? `${stats.label} · Max` : `${stats.label} · Lv ${nextLevel}`}
+              />
+            ),
+            cardFooter: atMax ? (
+              <div className="border-t border-white/10 py-0.5 text-center text-[10px] font-bold text-white/45">
+                Max level
+              </div>
+            ) : (
+              <PortraitCostRow
+                compact
+                costs={[{ resource: "gold", amount: upgradeCost! }, null, null]}
+              />
             ),
             preview: (
               <BuildIconPreview cameraPosition={TOWER_MENU_PREVIEW_CAMERA}>
@@ -109,28 +97,22 @@ export const TowerManageMenu = forwardRef<HTMLDivElement, TowerManageMenuProps>(
             costs: [{ resource: "gold", amount: sellRefund, gain: true }],
             costTone: "refund",
             canAfford: true,
-            showCostBadge: false,
-            hoverContent: (
-              <TowerMenuHoverDetails
-                name={stats.label}
-                targetMovement={stats.targetMovement}
-                targetPriority={stats.targetPriority}
-                subtitle="Destroy tower"
-              >
-                <div className="mt-2">
-                  <ResourceCostRow
-                    costs={[
-                      { resource: "gold", amount: sellRefund, gain: true },
-                    ]}
-                  />
-                </div>
-              </TowerMenuHoverDetails>
+            cardHeader: <TowerCardHeader stats={stats} subtitle="Destroy" />,
+            cardFooter: (
+              <PortraitCostRow
+                compact
+                costs={[
+                  { resource: "gold", amount: sellRefund, gain: true },
+                  null,
+                  null,
+                ]}
+              />
             ),
             preview: (
               <div className="flex h-full w-full items-center justify-center bg-rose-950/50">
                 <Trash2
                   className="text-rose-200"
-                  size={28}
+                  size={20}
                   strokeWidth={2.25}
                   aria-hidden
                 />

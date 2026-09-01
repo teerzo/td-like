@@ -7,13 +7,10 @@ import {
   BuildIconPreview,
 } from "@/components/game/build-action-menu";
 import { TowerModel, TOWER_MENU_PREVIEW_CAMERA, TOWER_MENU_PREVIEW_POSITION } from "@/components/game/models";
-import { TowerMenuHoverDetails } from "@/components/game/tower-hover-card";
-import { TowerCombatStats } from "@/components/game/combat-stats-display";
-import { ResourceCostRow } from "@/components/game/resource-icon";
+import { TowerCardCostRow, TowerCardHeader } from "@/components/game/tower-portrait";
 import {
-  formatTowerCounterHint,
-} from "@/lib/combat-counters";
-import {
+  canAffordTowerPlace,
+  getTowerPlaceCosts,
   getTowerStats,
   TOWER_TYPE_IDS,
   type TowerTypeId,
@@ -30,13 +27,18 @@ export type TowerPlaceMenuState = {
 type TowerPlaceMenuProps = {
   menu: TowerPlaceMenuState;
   gold: number;
+  iron: number;
+  wood: number;
   onSelect: (typeId: TowerTypeId) => void;
   onClose: () => void;
   onHoverType?: (typeId: TowerTypeId | null) => void;
 };
 
 export const TowerPlaceMenu = forwardRef<HTMLDivElement, TowerPlaceMenuProps>(
-  function TowerPlaceMenu({ menu, gold, onSelect, onClose, onHoverType }, ref) {
+  function TowerPlaceMenu(
+    { menu, gold, iron, wood, onSelect, onClose, onHoverType },
+    ref,
+  ) {
     return (
       <BuildActionMenu
         ref={ref}
@@ -44,6 +46,7 @@ export const TowerPlaceMenu = forwardRef<HTMLDivElement, TowerPlaceMenuProps>(
         clientY={menu.clientY}
         closeLabel="Close tower menu"
         portraitArc="topHalf"
+        portraitStyle="card"
         onClose={onClose}
         onActionHover={(actionId) => {
           onHoverType?.(
@@ -52,34 +55,16 @@ export const TowerPlaceMenu = forwardRef<HTMLDivElement, TowerPlaceMenuProps>(
         }}
         actions={TOWER_TYPE_IDS.map((typeId) => {
           const stats = getTowerStats(typeId);
-          const canAfford = gold >= stats.cost;
+          const costs = getTowerPlaceCosts(typeId);
+          const canAfford = canAffordTowerPlace(typeId, gold, wood, iron);
 
           return {
             id: typeId,
             label: `Place ${stats.label}`,
-            costs: [{ resource: "gold" as const, amount: stats.cost }],
+            costs,
             canAfford,
-            showCostBadge: false,
-            hoverContent: (
-              <TowerMenuHoverDetails
-                name={stats.label}
-                targetMovement={stats.targetMovement}
-                targetPriority={stats.targetPriority}
-              >
-                <div className="mt-2">
-                  <ResourceCostRow
-                    costs={[{ resource: "gold", amount: stats.cost }]}
-                  />
-                </div>
-                <p className="mt-2 text-white/70">
-                  {formatTowerCounterHint(stats.role)}
-                </p>
-                <TowerCombatStats stats={stats} />
-                <p className="mt-2 text-white/55">
-                  {stats.attackRangeTiles} range · {stats.attackCooldown}s
-                </p>
-              </TowerMenuHoverDetails>
-            ),
+            cardHeader: <TowerCardHeader stats={stats} />,
+            cardFooter: <TowerCardCostRow costs={costs} />,
             preview: (
               <BuildIconPreview cameraPosition={TOWER_MENU_PREVIEW_CAMERA}>
                 <TowerModel

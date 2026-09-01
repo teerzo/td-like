@@ -22,6 +22,12 @@ export {
   FishingHutModel,
   fishingHutVariant,
 } from "@/components/game/models/fishing-hut";
+export {
+  LumberMillModel,
+  LumberPlotModel,
+  lumberMillVariant,
+  lumberPlotVariant,
+} from "@/components/game/models/lumber-mill";
 export { RockModel, rockVariant } from "@/components/game/models/rock";
 export { EnemyModel } from "@/components/game/models/enemy";
 export { TowerModel, TOWER_MENU_PREVIEW_CAMERA, TOWER_MENU_PREVIEW_POSITION } from "@/components/game/models/tower";
