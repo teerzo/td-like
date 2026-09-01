@@ -89,6 +89,7 @@ export function ForestGround({
 
   const omitGrassKeys = useMemo(() => {
     const keys = new Set<string>();
+    const passiveKeys = new Set<string>();
 
     for (let x = 0; x < plot.size; x += 1) {
       for (let z = 0; z < plot.size; z += 1) {
@@ -97,7 +98,7 @@ export function ForestGround({
         const key = globalCoordKey(gx, gz);
 
         if (standingForestKeys.has(key)) {
-          keys.add(`${x}:${z}`);
+          passiveKeys.add(`${x}:${z}`);
           continue;
         }
 
@@ -111,7 +112,7 @@ export function ForestGround({
       }
     }
 
-    return keys;
+    return { omit: keys, passive: passiveKeys };
   }, [plot, standingForestKeys, revealedTiles]);
 
   const tiles = useMemo(() => generateTerrain(plot.size), [plot.size]);
@@ -122,7 +123,8 @@ export function ForestGround({
         size={plot.size}
         origin={plot.origin}
         opacity={opacity}
-        omitLocalKeys={omitGrassKeys}
+        omitLocalKeys={omitGrassKeys.omit}
+        passiveLocalKeys={omitGrassKeys.passive}
         selectedTileKey={selectedTileKey}
         onSelectTile={onSelectTile}
       />

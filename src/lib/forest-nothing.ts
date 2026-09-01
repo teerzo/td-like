@@ -222,7 +222,7 @@ export function collectStandingForestKeys(
 /** Standing forest keys for a plain grass build plot. */
 export function collectBuildPlotForestKeys(
   plot: Pick<BuildPlot, "origin" | "size">,
-  isGlobalRoad: (gx: number, gz: number) => boolean,
+  isGlobalRoad?: (gx: number, gz: number) => boolean,
 ): string[] {
   const keys: string[] = [];
 
@@ -231,7 +231,7 @@ export function collectBuildPlotForestKeys(
       const gx = plot.origin.gx + x;
       const gz = plot.origin.gz + z;
 
-      if (isGlobalRoad(gx, gz)) {
+      if (isGlobalRoad?.(gx, gz)) {
         continue;
       }
 

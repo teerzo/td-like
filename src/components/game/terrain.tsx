@@ -741,11 +741,6 @@ export function Terrain({
           continue;
         }
 
-        if (standingForestKeys?.has(key)) {
-          keys.add(`${local.x}:${local.z}`);
-          continue;
-        }
-
         const decorKind = revealedKindToDecorKind(kind);
         if (decorKind && decorOmitsGrass(decorKind)) {
           keys.add(`${local.x}:${local.z}`);
@@ -763,8 +758,25 @@ export function Terrain({
     forestMode,
     revealedTiles,
     origin,
-    standingForestKeys,
   ]);
+
+  const forestPassiveGrassKeys = useMemo(() => {
+    const keys = new Set<string>();
+    if (!standingForestKeys) {
+      return keys;
+    }
+
+    for (let x = 0; x < layout.size; x += 1) {
+      for (let z = 0; z < layout.size; z += 1) {
+        const key = globalCoordKey(origin.gx + x, origin.gz + z);
+        if (standingForestKeys.has(key)) {
+          keys.add(`${x}:${z}`);
+        }
+      }
+    }
+
+    return keys;
+  }, [standingForestKeys, layout.size, origin]);
 
   const goldMineWorld = useMemo(() => {
     if (!goldMine) {
@@ -843,6 +855,7 @@ export function Terrain({
           origin={origin}
           opacity={opacity}
           omitLocalKeys={omitGrassKeys}
+          passiveLocalKeys={forestPassiveGrassKeys}
           selectedTileKey={selectedTileKey}
           onSelectTile={onSelectTile}
         />

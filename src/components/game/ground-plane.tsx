@@ -119,6 +119,30 @@ function SelectableGrassTile({
   );
 }
 
+function StaticGrassTile({
+  gx,
+  gz,
+  material,
+}: {
+  gx: number;
+  gz: number;
+  material: THREE.MeshStandardMaterial;
+}) {
+  const { x, z } = globalTileWorldPosition(gx, gz);
+
+  return (
+    <mesh
+      rotation={[-Math.PI / 2, 0, 0]}
+      position={[x, GROUND_Y, z]}
+      material={material}
+      receiveShadow
+      raycast={() => {}}
+    >
+      <planeGeometry args={[TILE_SIZE, TILE_SIZE]} />
+    </mesh>
+  );
+}
+
 export function GrassTiles({
   tiles,
   opacity = 1,
@@ -159,6 +183,7 @@ export function GrassGround({
   origin,
   opacity = 1,
   omitLocalKeys,
+  passiveLocalKeys,
   selectedTileKey,
   onSelectTile,
 }: {
@@ -167,6 +192,8 @@ export function GrassGround({
   opacity?: number;
   /** Local `x:z` keys where grass should not be rendered (e.g. dirt roads). */
   omitLocalKeys?: ReadonlySet<string>;
+  /** Local `x:z` keys that still get a grass plane, but no click hitbox. */
+  passiveLocalKeys?: ReadonlySet<string>;
 } & GrassSelectionProps) {
   const tiles = useMemo(() => {
     const all = generateTerrain(size);
@@ -185,13 +212,25 @@ export function GrassGround({
         const gx = origin.gx + tile.x;
         const gz = origin.gz + tile.z;
         const textureId = grassTextureForTile(tile.x, tile.z);
+        const material = materials[textureId];
+
+        if (passiveLocalKeys?.has(tile.key)) {
+          return (
+            <StaticGrassTile
+              key={tile.key}
+              gx={gx}
+              gz={gz}
+              material={material}
+            />
+          );
+        }
 
         return (
           <SelectableGrassTile
             key={tile.key}
             gx={gx}
             gz={gz}
-            material={materials[textureId]}
+            material={material}
             selectedTileKey={selectedTileKey}
             onSelectTile={onSelectTile}
           />

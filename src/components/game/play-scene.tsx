@@ -424,10 +424,6 @@ export default function PlayScene() {
   const [revealedTiles, setRevealedTiles] = useState<
     Map<string, RevealedTileKind>
   >(() => new Map());
-  const forestInitializedPlotIdsRef = useRef(new Set<number>());
-  const [plotForestKeys, setPlotForestKeys] = useState<Set<string>>(
-    () => new Set(),
-  );
   const [obstacleClearMenu, setObstacleClearMenu] =
     useState<ObstacleClearMenuState | null>(null);
   const [armyMenu, setArmyMenu] = useState<CastleArmyMenuState | null>(null);
@@ -592,6 +588,16 @@ export default function PlayScene() {
     (gx: number, gz: number) => globalRoadKeys.has(globalCoordKey(gx, gz)),
     [globalRoadKeys],
   );
+
+  const plotForestKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const plot of buildPlots) {
+      for (const key of collectBuildPlotForestKeys(plot, isGlobalRoad)) {
+        keys.add(key);
+      }
+    }
+    return keys;
+  }, [buildPlots, isGlobalRoad]);
 
   const towerPlacementBlockedKeys = useMemo(() => {
     const keys = new Set<string>();
@@ -2037,9 +2043,7 @@ export default function PlayScene() {
     setFishingHuts([]);
     setBuiltMines([]);
     setChoppedForestKeys(new Set());
-    setPlotForestKeys(new Set());
     setRevealedTiles(new Map());
-    forestInitializedPlotIdsRef.current.clear();
     setUnlockedBuildEdges([]);
     setBuildPlots([]);
     setClearedObstacleKeys(new Set());
@@ -2094,27 +2098,6 @@ export default function PlayScene() {
   useEffect(() => {
     registryRef.current.claimLayout(mainOrigin, mainLayout, 0);
   }, [mainLayout, mainOrigin]);
-
-  useEffect(() => {
-    setPlotForestKeys((prev) => {
-      let next = prev;
-
-      for (const plot of buildPlots) {
-        if (forestInitializedPlotIdsRef.current.has(plot.id)) {
-          continue;
-        }
-
-        forestInitializedPlotIdsRef.current.add(plot.id);
-        next = new Set(next);
-
-        for (const key of collectBuildPlotForestKeys(plot, isGlobalRoad)) {
-          next.add(key);
-        }
-      }
-
-      return next;
-    });
-  }, [buildPlots, isGlobalRoad]);
 
   const castleWorld = globalTileWorldPosition(
     mainOrigin.gx + mainLayout.castle.x,
