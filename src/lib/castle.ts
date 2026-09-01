@@ -5,6 +5,7 @@ export const CASTLE_MAX_HEALTH = 10;
 /** HP lost when an enemy reaches the castle. */
 export const CASTLE_LEAK_DAMAGE: Partial<Record<EnemyTypeId, number>> = {
   peon: 1,
+  bat: 1,
   archer: 1,
   knight: 2,
   catapult: 2,

@@ -31,7 +31,7 @@ export function canAffordFarm(resources: {
 /** Food granted per farm when a wave/level is cleared. */
 export const FARM_INCOME = 5;
 
-export const BUILD_PLOT_SIZE = 5;
+export const BUILD_PLOT_SIZE = 9;
 
 const CARDINAL_DIRS = [
   { dx: 0, dz: -1 },

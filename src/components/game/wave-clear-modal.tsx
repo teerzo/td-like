@@ -158,11 +158,12 @@ export function WaveClearModal({ result, onAccept }: WaveClearModalProps) {
 }
 
 /**
- * Wave food reward: sum of killed units' recruit food costs.
+ * Wave food reward: sum of killed units' recruit food costs, plus `1 × waveLevel`.
  * Non-army types (debug spawns) contribute 0 to the cost sum.
  */
 export function computeWaveFoodReward(
   kills: Partial<Record<EnemyTypeId, number>>,
+  waveLevel: number,
 ): number {
   let costTotal = 0;
   for (const [typeId, count] of Object.entries(kills)) {
@@ -173,5 +174,5 @@ export function computeWaveFoodReward(
     const cost = isArmyUnitId(id) ? ARMY_UNIT_COSTS[id].food : 0;
     costTotal += count * cost;
   }
-  return costTotal;
+  return costTotal + Math.max(1, waveLevel);
 }

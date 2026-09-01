@@ -33,12 +33,28 @@ export function writeGameSetting(key: string, value: boolean): void {
   }
 }
 
-export function usePersistedBoolean(key: string, defaultValue: boolean) {
-  const [value, setValue] = useState(defaultValue);
+export function isMobileViewport() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  return window.matchMedia("(max-width: 767px)").matches;
+}
+
+export function usePersistedBoolean(
+  key: string,
+  defaultValue: boolean,
+  options?: { mobileDefault?: boolean; initial?: boolean },
+) {
+  const [value, setValue] = useState(options?.initial ?? defaultValue);
 
   useEffect(() => {
-    setValue(readGameSetting(key, defaultValue));
-  }, [key, defaultValue]);
+    const fallback =
+      options?.mobileDefault !== undefined && isMobileViewport()
+        ? options.mobileDefault
+        : defaultValue;
+    setValue(readGameSetting(key, fallback));
+  }, [key, defaultValue, options?.mobileDefault]);
 
   const setPersistedValue = useCallback(
     (next: boolean | ((current: boolean) => boolean)) => {

@@ -3,6 +3,7 @@ import { JetBrains_Mono, Nunito } from "next/font/google";
 
 import { FloatingNav } from "@/components/floating-nav";
 import { GameSettingsProvider } from "@/components/game/game-settings-provider";
+import { PlayHudProvider } from "@/components/game/play-hud-provider";
 import { PlayPerfProvider } from "@/components/game/play-perf-toggles";
 import "./globals.css";
 
@@ -30,10 +31,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col">
         <GameSettingsProvider>
-          <PlayPerfProvider>
-            <FloatingNav />
-            {children}
-          </PlayPerfProvider>
+          <PlayHudProvider>
+            <PlayPerfProvider>
+              <FloatingNav />
+              {children}
+            </PlayPerfProvider>
+          </PlayHudProvider>
         </GameSettingsProvider>
       </body>
     </html>

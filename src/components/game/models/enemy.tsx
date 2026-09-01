@@ -12,6 +12,11 @@ const ENEMY_PALETTES: Record<
     accent: "#fde68a",
     emissive: "#713f12",
   },
+  bat: {
+    body: "#44403c",
+    accent: "#a8a29e",
+    emissive: "#1c1917",
+  },
   archer: {
     body: "#4a7c59",
     accent: "#c4a574",
@@ -210,6 +215,57 @@ function CatapultModel({
   );
 }
 
+function BatModel({
+  body,
+  accent,
+  emissive,
+}: {
+  body: string;
+  accent: string;
+  emissive: string;
+}) {
+  return (
+    <group>
+      <mesh position={[0, VOXEL * 0.55, 0]}>
+        <boxGeometry args={[VOXEL * 0.85, VOXEL * 0.65, VOXEL * 1.15]} />
+        <meshStandardMaterial
+          color={body}
+          emissive={emissive}
+          emissiveIntensity={0.3}
+          roughness={0.85}
+        />
+      </mesh>
+      <mesh position={[0, VOXEL * 0.7, VOXEL * 0.7]}>
+        <boxGeometry args={[VOXEL * 0.55, VOXEL * 0.5, VOXEL * 0.55]} />
+        <meshStandardMaterial
+          color={accent}
+          emissive={emissive}
+          emissiveIntensity={0.2}
+          roughness={0.8}
+        />
+      </mesh>
+      <mesh position={[VOXEL * 0.95, VOXEL * 0.75, 0]} rotation={[0, 0, -0.5]}>
+        <boxGeometry args={[VOXEL * 1.4, VOXEL * 0.08, VOXEL * 0.9]} />
+        <meshStandardMaterial
+          color={body}
+          emissive={emissive}
+          emissiveIntensity={0.2}
+          roughness={0.8}
+        />
+      </mesh>
+      <mesh position={[-VOXEL * 0.95, VOXEL * 0.75, 0]} rotation={[0, 0, 0.5]}>
+        <boxGeometry args={[VOXEL * 1.4, VOXEL * 0.08, VOXEL * 0.9]} />
+        <meshStandardMaterial
+          color={body}
+          emissive={emissive}
+          emissiveIntensity={0.2}
+          roughness={0.8}
+        />
+      </mesh>
+    </group>
+  );
+}
+
 function DragonModel({
   body,
   accent,
@@ -279,6 +335,8 @@ export function EnemyModel({
   switch (typeId) {
     case "peon":
       return <PeonModel {...palette} />;
+    case "bat":
+      return <BatModel {...palette} />;
     case "archer":
       return <ArcherModel {...palette} />;
     case "knight":

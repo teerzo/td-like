@@ -11,6 +11,7 @@ type ResourcesHudProps = {
   wood: number;
   stone: number;
   food: number;
+  onAddResource: (resource: ResourceId) => void;
 };
 
 const HUD_STYLE: Record<
@@ -45,6 +46,7 @@ export function ResourcesHud({
   wood,
   stone,
   food,
+  onAddResource,
 }: ResourcesHudProps) {
   const entries: { id: ResourceId; value: number }[] = [
     { id: "gold", value: gold },
@@ -56,23 +58,27 @@ export function ResourcesHud({
 
   return (
     <div
-      className="pointer-events-none absolute right-6 bottom-6 z-10 flex flex-wrap items-end justify-end gap-2"
+      className="pointer-events-none flex flex-nowrap items-center gap-2 overflow-x-auto"
       aria-live="polite"
     >
       {entries.map((entry) => {
         const style = HUD_STYLE[entry.id];
         return (
-          <div
+          <button
             key={entry.id}
-            className={`flex items-center rounded-2xl border px-3 py-2 ${style.border} ${style.panel}`}
+            type="button"
+            className={`pointer-events-auto flex items-center rounded-xl border px-2 py-1.5 transition hover:brightness-125 ${style.border} ${style.panel}`}
+            title={`Add 10 ${entry.id}`}
+            aria-label={`Add 10 ${entry.id}`}
+            onClick={() => onAddResource(entry.id)}
           >
             <ResourceAmount
               resource={entry.id}
               amount={entry.value}
-              size="md"
+              size="sm"
               className="text-white"
             />
-          </div>
+          </button>
         );
       })}
     </div>

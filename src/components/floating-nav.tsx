@@ -5,10 +5,13 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 
 import { FpsCounter } from "@/components/fps-counter";
-import { AutoplayToggle } from "@/components/game/autoplay-toggle";
+import { AutoplayConfidenceBadge, AutoplayToggle } from "@/components/game/autoplay-toggle";
 import { FreezeMapToggle } from "@/components/game/freeze-map-toggle";
 import { useGameSettings } from "@/components/game/game-settings-provider";
+import { LevelHud } from "@/components/game/level-hud";
+import { usePlayHud, type PlayHudState } from "@/components/game/play-hud-provider";
 import { PlayPerfToggles } from "@/components/game/play-perf-toggles";
+import { ResourcesHud } from "@/components/game/resources-hud";
 import { LoginForm } from "@/components/login-form";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -20,6 +23,22 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
+function PlayStatusChips({ hud }: { hud: PlayHudState }) {
+  return (
+    <>
+      <LevelHud level={hud.level} />
+      <ResourcesHud
+        gold={hud.gold}
+        iron={hud.iron}
+        wood={hud.wood}
+        stone={hud.stone}
+        food={hud.food}
+        onAddResource={hud.onAddResource}
+      />
+    </>
+  );
+}
+
 export function FloatingNav() {
   const [loginOpen, setLoginOpen] = useState(false);
   const pathname = usePathname();
@@ -29,59 +48,70 @@ export function FloatingNav() {
     setAutoplayEnabled,
     freezeMapExpansion,
     setFreezeMapExpansion,
+    autoplayConfidence,
   } = useGameSettings();
+  const { hud } = usePlayHud();
 
   return (
-    <nav className="pointer-events-none fixed inset-x-0 top-0 z-50 flex flex-col items-center">
-      <div className="pointer-events-auto flex w-full max-w-5xl items-center justify-between gap-3 bg-transparent px-3 py-2">
-        <div className="flex items-baseline gap-3 px-2">
-          <Link href="/">
-            <h1 className="font-heading text-2xl font-semibold tracking-tight text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.55)] sm:text-3xl">
-              td-like
-            </h1>
-          </Link>
-          <FpsCounter />
+    <>
+      <nav className="pointer-events-none fixed inset-x-0 top-0 z-50 flex flex-col items-center">
+        <div className="pointer-events-auto flex w-full max-w-5xl items-center gap-3 bg-transparent px-3 py-2">
+          <div className="flex shrink-0 items-baseline gap-3 px-2">
+            <Link href="/">
+              <h1 className="font-heading text-2xl font-semibold tracking-tight text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.55)] sm:text-3xl">
+                td-like
+              </h1>
+            </Link>
+            <FpsCounter />
+          </div>
+          <div className="hidden min-w-0 flex-1 items-center justify-center gap-2 md:flex">
+            {isPlayPage && hud ? <PlayStatusChips hud={hud} /> : null}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              variant="ghost"
+              className="text-white hover:bg-white/10 hover:text-white"
+              onClick={() => setLoginOpen(true)}
+            >
+              Log in
+            </Button>
+            <Link
+              href="/signup"
+              className={buttonVariants({
+                className: "bg-white text-black hover:bg-white/90",
+              })}
+            >
+              Sign up
+            </Link>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          {isPlayPage ? (
-            <>
-              <div className="flex items-center gap-2">
-                <AutoplayToggle
-                  enabled={autoplayEnabled}
-                  onToggle={() => setAutoplayEnabled((current) => !current)}
-                />
-                <FreezeMapToggle
-                  enabled={freezeMapExpansion}
-                  onToggle={() =>
-                    setFreezeMapExpansion((current) => !current)
-                  }
-                />
-              </div>
-              <div
-                className="h-7 w-px shrink-0 bg-white/25"
-                aria-hidden
-              />
-            </>
-          ) : null}
-          <Button
-            variant="ghost"
-            className="text-white hover:bg-white/10 hover:text-white"
-            onClick={() => setLoginOpen(true)}
-          >
-            Log in
-          </Button>
-          <Link
-            href="/signup"
-            className={buttonVariants({
-              className: "bg-white text-black hover:bg-white/90",
-            })}
-          >
-            Sign up
-          </Link>
-        </div>
-      </div>
 
-      <PlayPerfToggles />
+        {isPlayPage && hud ? (
+          <div className="pointer-events-none flex w-full justify-center px-3 pb-1 md:hidden">
+            <div className="pointer-events-auto flex w-full max-w-5xl items-center justify-center gap-2 overflow-x-auto">
+              <PlayStatusChips hud={hud} />
+            </div>
+          </div>
+        ) : null}
+
+        <PlayPerfToggles />
+      </nav>
+
+      {isPlayPage ? (
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex justify-center px-3 pb-4">
+          <div className="pointer-events-auto flex items-center gap-2">
+            <AutoplayConfidenceBadge confidence={autoplayConfidence} />
+            <AutoplayToggle
+              enabled={autoplayEnabled}
+              onToggle={() => setAutoplayEnabled((current) => !current)}
+            />
+            <FreezeMapToggle
+              enabled={freezeMapExpansion}
+              onToggle={() => setFreezeMapExpansion((current) => !current)}
+            />
+          </div>
+        </div>
+      ) : null}
 
       {loginOpen ? (
         <div className="pointer-events-auto fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-6 backdrop-blur-sm">
@@ -107,6 +137,6 @@ export function FloatingNav() {
           </Card>
         </div>
       ) : null}
-    </nav>
+    </>
   );
 }

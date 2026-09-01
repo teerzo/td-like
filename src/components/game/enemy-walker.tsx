@@ -1,15 +1,47 @@
 "use client";
 
 import { useFrame } from "@react-three/fiber";
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import type * as THREE from "three";
 
 import { EnemyHealthBar } from "@/components/game/enemy-health-bar";
 import { EnemyModel } from "@/components/game/models/enemy";
 import type { EnemyMovementType, EnemyTypeId } from "@/lib/enemy-types";
+import { TILE_SPACING } from "@/lib/terrain";
 
 const FLYING_Y_OFFSET = 0.35;
 const DEATH_DURATION = 0.55;
+
+function polylineCumulativeLengths(path: [number, number, number][]) {
+  const lengths = [0];
+  for (let i = 1; i < path.length; i += 1) {
+    const a = path[i - 1]!;
+    const b = path[i]!;
+    lengths.push(
+      lengths[i - 1]! + Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]),
+    );
+  }
+  return { lengths, total: lengths[lengths.length - 1] ?? 0 };
+}
+
+function samplePolyline(
+  path: [number, number, number][],
+  lengths: number[],
+  distance: number,
+) {
+  const last = path.length - 1;
+  if (distance >= (lengths[last] ?? 0)) {
+    return { start: path[last - 1]!, end: path[last]!, t: 1 };
+  }
+
+  let i = 0;
+  while (i < last - 1 && (lengths[i + 1] ?? 0) < distance) {
+    i += 1;
+  }
+  const segLen = (lengths[i + 1] ?? 0) - (lengths[i] ?? 0);
+  const t = segLen <= 1e-8 ? 1 : (distance - (lengths[i] ?? 0)) / segLen;
+  return { start: path[i]!, end: path[i + 1]!, t };
+}
 
 type EnemyWalkerProps = {
   path: [number, number, number][];
@@ -41,11 +73,15 @@ export function EnemyWalker({
 }: EnemyWalkerProps) {
   const groupRef = useRef<THREE.Group>(null);
   const modelRef = useRef<THREE.Group>(null);
-  const progress = useRef(0);
+  const distanceTraveled = useRef(0);
   const finished = useRef(false);
   const deathProgress = useRef(0);
   const deathDone = useRef(false);
   const yOffset = movementType === "flying" ? FLYING_Y_OFFSET : 0;
+  const { lengths, total } = useMemo(
+    () => polylineCumulativeLengths(path),
+    [path],
+  );
 
   useFrame((_, delta) => {
     const group = groupRef.current;
@@ -98,21 +134,20 @@ export function EnemyWalker({
     }
 
     if (!paused) {
-      progress.current += moveSpeed * delta;
+      distanceTraveled.current += moveSpeed * TILE_SPACING * delta;
     }
 
-    const maxProgress = path.length - 1;
-
-    if (progress.current >= maxProgress) {
-      progress.current = maxProgress;
+    if (total <= 0 || distanceTraveled.current >= total) {
+      distanceTraveled.current = total;
       finished.current = true;
       onReachExit?.();
     }
 
-    const segmentIndex = Math.min(Math.floor(progress.current), path.length - 2);
-    const segmentT = progress.current - segmentIndex;
-    const start = path[segmentIndex]!;
-    const end = path[segmentIndex + 1]!;
+    const { start, end, t: segmentT } = samplePolyline(
+      path,
+      lengths,
+      distanceTraveled.current,
+    );
 
     group.position.set(
       start[0] + (end[0] - start[0]) * segmentT,

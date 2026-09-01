@@ -120,7 +120,7 @@ export function PlayPerfToggles() {
   const { flags, toggle, enableAll, disableHeavy } = ctx;
 
   return (
-    <div className="pointer-events-none flex w-full justify-center px-4 pb-1">
+    <div className="pointer-events-none hidden w-full justify-center px-4 pb-1 md:flex">
       <div className="pointer-events-auto flex w-full max-w-5xl items-center gap-1.5 overflow-x-auto border-t border-white/10 px-3 py-1">
         <span className="shrink-0 pr-1 text-[10px] font-medium uppercase tracking-wide text-white/45">
           Perf

@@ -143,6 +143,64 @@ export function getChainedWorldPath(
   return path.length >= 2 ? path : null;
 }
 
+function layoutWorldPoint(
+  origin: ChunkOrigin,
+  coord: { x: number; z: number },
+  y: number,
+): [number, number, number] {
+  const { x, z } = globalTileWorldPosition(origin.gx + coord.x, origin.gz + coord.z);
+  return [x, y, z];
+}
+
+function pointsJoin(
+  a: [number, number, number],
+  b: [number, number, number],
+): boolean {
+  return Math.hypot(a[0] - b[0], a[2] - b[2]) < PATH_JOIN_EPSILON;
+}
+
+/**
+ * Flying path: straight lines to each grid's exit (entrance → exit per level),
+ * then into the main exit by the castle. Does not follow winding dirt roads.
+ */
+export function getChainedFlyingWorldPath(
+  levels: PlacedLayout[],
+  fromIndex: number,
+  y = 0.12,
+  outerPathIndex = 0,
+): [number, number, number][] | null {
+  if (levels.length === 0 || fromIndex < 0 || fromIndex >= levels.length) {
+    return null;
+  }
+
+  const waypoints: [number, number, number][] = [];
+
+  for (let i = fromIndex; i >= 0; i -= 1) {
+    const level = levels[i]!;
+    const pathIndex = i === fromIndex ? outerPathIndex : 0;
+    const roadPath = level.layout.paths[pathIndex] ?? level.layout.paths[0];
+
+    if (!roadPath) {
+      return null;
+    }
+
+    const entrance = layoutWorldPoint(level.origin, roadPath.entrance, y);
+    const exit = layoutWorldPoint(level.origin, roadPath.exit, y);
+
+    if (waypoints.length === 0) {
+      waypoints.push(entrance);
+    } else if (!pointsJoin(waypoints[waypoints.length - 1]!, entrance)) {
+      waypoints.push(entrance);
+    }
+
+    if (!pointsJoin(waypoints[waypoints.length - 1]!, exit)) {
+      waypoints.push(exit);
+    }
+  }
+
+  return waypoints.length >= 2 ? waypoints : null;
+}
+
 export function collectOnGridGlobalKeys(
   layout: WorldLayout,
   origin: ChunkOrigin,

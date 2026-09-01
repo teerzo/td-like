@@ -27,3 +27,28 @@ export function AutoplayToggle({
     </button>
   );
 }
+
+export function AutoplayConfidenceBadge({
+  confidence,
+  className = "",
+}: {
+  confidence: number;
+  className?: string;
+}) {
+  const pct = Math.round(confidence * 100);
+  const tone =
+    confidence >= 0.66
+      ? "border-emerald-400/50 bg-emerald-500/25 text-emerald-50"
+      : confidence >= 0.35
+        ? "border-amber-400/50 bg-amber-500/25 text-amber-50"
+        : "border-rose-400/50 bg-rose-500/25 text-rose-50";
+
+  return (
+    <div
+      className={`rounded-xl border px-3 py-2 text-sm font-semibold shadow-[0_8px_24px_rgba(0,0,0,0.4)] backdrop-blur-md ${tone} ${className}`}
+      aria-label={`Autoplay confidence ${pct} percent`}
+    >
+      Conf {pct}%
+    </div>
+  );
+}

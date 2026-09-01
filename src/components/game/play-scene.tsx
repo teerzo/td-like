@@ -58,7 +58,6 @@ import {
   type ObstacleClearMenuState,
 } from "@/components/game/obstacle-clear-menu";
 import { ForestGround } from "@/components/game/forest-ground";
-import { ResourcesHud } from "@/components/game/resources-hud";
 import { Terrain } from "@/components/game/terrain";
 import { TowerAttackRadiusPreview } from "@/components/game/tower-attack-radius-preview";
 import { TowerPlaceMenu, type TowerPlaceMenuState } from "@/components/game/tower-place-menu";
@@ -66,7 +65,7 @@ import {
   TowerManageMenu,
   type TowerManageMenuState,
 } from "@/components/game/tower-manage-menu";
-import { LevelHud } from "@/components/game/level-hud";
+import { usePublishPlayHud } from "@/components/game/play-hud-provider";
 import { usePlayPerfFlags } from "@/components/game/play-perf-toggles";
 import {
   TowerDefenseSystem,
@@ -79,6 +78,7 @@ import {
   globalCoordKey,
   GlobalTileRegistry,
   globalTileWorldPosition,
+  getChainedFlyingWorldPath,
   getChainedWorldPath,
   getSeamGrassTileGroups,
   localToGlobal,
@@ -119,9 +119,12 @@ import {
   type ArmyUnitId,
 } from "@/lib/army-types";
 import {
+  AUTOPLAY_CONFIDENCE_START,
   AUTOPLAY_MODAL_DELAY_MS,
   AUTOPLAY_TICK_MS,
   chooseAutoplayAction,
+  countAutoplayLeaks,
+  nextAutoplayConfidence,
   planFoodRecruits,
   type AutoplaySnapshot,
 } from "@/lib/autoplay";
@@ -345,7 +348,8 @@ function GroundOrbitControls({
 
 export default function PlayScene() {
   const perf = usePlayPerfFlags();
-  const { autoplayEnabled, freezeMapExpansion } = useGameSettings();
+  const { autoplayEnabled, freezeMapExpansion, autoplayConfidence, setAutoplayConfidence } =
+    useGameSettings();
   const prevAutoplayEnabledRef = useRef(autoplayEnabled);
   /** Day = manage land/army; night = inbound raid until the wave is cleared. */
   const [isNight, setIsNight] = useState(false);
@@ -447,6 +451,37 @@ export default function PlayScene() {
   const [food, setFood] = useState(STARTING_FOOD);
   const autoplayFoodRef = useRef(food);
   autoplayFoodRef.current = food;
+
+  const handleAddHudResource = useCallback((resource: ResourceId) => {
+    const amount = 10;
+    if (resource === "gold") {
+      setGold((current) => current + amount);
+      return;
+    }
+    if (resource === "iron") {
+      setIron((current) => current + amount);
+      return;
+    }
+    if (resource === "wood") {
+      setWood((current) => current + amount);
+      return;
+    }
+    if (resource === "stone") {
+      setStone((current) => current + amount);
+      return;
+    }
+    setFood((current) => current + amount);
+  }, []);
+
+  usePublishPlayHud({
+    level: waveLevel,
+    gold,
+    iron,
+    wood,
+    stone,
+    food,
+    onAddResource: handleAddHudResource,
+  });
   const nextChunkId = useRef(0);
   const nextTowerId = useRef(0);
   const nextEnemyId = useRef(0);
@@ -1467,6 +1502,7 @@ export default function PlayScene() {
       waveLevel,
       isNight,
       waveClearOpen: !!waveClearModal && waveClearAutoplayReady,
+      confidence: autoplayConfidence,
       standingForestKeys,
       revealedTiles,
       builtMineKeys: builtMineKeySet,
@@ -1484,6 +1520,7 @@ export default function PlayScene() {
       hillKeys: new Set(hillTilesByKey.keys()),
       roadKeys: globalRoadKeys,
       openKeys: autoplayOpenAndBuildable.openKeys,
+      interactableKeys: interactableTileKeys,
       buildableTowerKeys: autoplayOpenAndBuildable.buildableTowerKeys,
       unusedGates: unusedEdgeGates.map((entry) => entry.edge),
       edgeGateCost: EDGE_GATE_COST,
@@ -1622,18 +1659,26 @@ export default function PlayScene() {
     }
 
     const pathIndex = Math.floor(Math.random() * pathCount);
-    const path = getChainedWorldPath(
-      levelChain,
-      combatLevelIndex,
-      0.12,
-      pathIndex,
-    );
+    const stats = getEnemyStats(typeId);
+    const path =
+      stats.movementType === "flying"
+        ? getChainedFlyingWorldPath(
+            levelChain,
+            combatLevelIndex,
+            0.12,
+            pathIndex,
+          )
+        : getChainedWorldPath(
+            levelChain,
+            combatLevelIndex,
+            0.12,
+            pathIndex,
+          );
 
     if (!path || path.length < 2) {
       return null;
     }
 
-    const stats = getEnemyStats(typeId);
     const id = nextEnemyId.current;
     nextEnemyId.current += 1;
     return {
@@ -1707,7 +1752,7 @@ export default function PlayScene() {
 
     const kills = { ...nightKillsRef.current };
     const leaks = { ...nightLeaksRef.current };
-    const foodReward = computeWaveFoodReward(kills);
+    const foodReward = computeWaveFoodReward(kills, waveLevel);
     const buildingGold =
       builtMines.filter((mine) => mine.kind === "gold").length *
       GOLD_MINE_INCOME;
@@ -1720,6 +1765,9 @@ export default function PlayScene() {
     nightWaveActiveRef.current = false;
     nightKillsRef.current = {};
     nightLeaksRef.current = {};
+    setAutoplayConfidence((current) =>
+      nextAutoplayConfidence(current, countAutoplayLeaks(leaks)),
+    );
     setWaveClearModal({
       kills,
       leaks,
@@ -1732,6 +1780,7 @@ export default function PlayScene() {
     enemies.length,
     isNight,
     waveClearModal,
+    waveLevel,
     builtMines,
     farms.length,
     fishingHuts.length,
@@ -2007,6 +2056,7 @@ export default function PlayScene() {
     waveGenerationRef.current += 1;
     nightKillsRef.current = {};
     nightLeaksRef.current = {};
+    setAutoplayConfidence(AUTOPLAY_CONFIDENCE_START);
     lifetimeStatsRef.current = createEmptyLifetimeStats();
     gameOverRef.current = false;
     setCastleHp(CASTLE_MAX_HEALTH);
@@ -2586,14 +2636,6 @@ export default function PlayScene() {
             onAccept={handleAcceptWaveClear}
           />
         ) : null}
-        <LevelHud level={waveLevel} />
-        <ResourcesHud
-          gold={gold}
-          iron={iron}
-          wood={wood}
-          stone={stone}
-          food={food}
-        />
       </div>
     </div>
   );

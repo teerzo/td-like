@@ -231,7 +231,7 @@ export function collectBuildPlotForestKeys(
       const gx = plot.origin.gx + x;
       const gz = plot.origin.gz + z;
 
-      if (isGlobalRoadClearanceTile(gx, gz, isGlobalRoad)) {
+      if (isGlobalRoad(gx, gz)) {
         continue;
       }
 

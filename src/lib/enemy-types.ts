@@ -12,6 +12,7 @@ export type EnemyRole =
 
 export type EnemyTypeId =
   | "peon"
+  | "bat"
   | "archer"
   | "knight"
   | "catapult"
@@ -19,6 +20,7 @@ export type EnemyTypeId =
 
 export const ENEMY_TYPE_IDS: EnemyTypeId[] = [
   "peon",
+  "bat",
   "archer",
   "knight",
   "catapult",
@@ -28,6 +30,7 @@ export const ENEMY_TYPE_IDS: EnemyTypeId[] = [
 /** Night auto-spawn pool (computer inbound waves). */
 export const NIGHT_WAVE_TYPE_IDS: EnemyTypeId[] = [
   "peon",
+  "bat",
   "archer",
   "knight",
   "catapult",
@@ -54,6 +57,17 @@ export const ENEMY_TYPES: Record<EnemyTypeId, EnemyStats> = {
     roles: ["swarm"],
     moveSpeed: 1.4,
     health: 10,
+    armor: 0,
+    immunities: [],
+    goldReward: 1,
+  },
+  bat: {
+    id: "bat",
+    label: "Bat",
+    movementType: "flying",
+    roles: ["flying", "swarm"],
+    moveSpeed: 1.1,
+    health: 5,
     armor: 0,
     immunities: [],
     goldReward: 1,

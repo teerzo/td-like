@@ -27,6 +27,14 @@ import type { LevelEdge } from "@/lib/world-layout";
 export const AUTOPLAY_TICK_MS = 800;
 export const AUTOPLAY_MODAL_DELAY_MS = 5000;
 
+export const AUTOPLAY_CONFIDENCE_MIN = 0;
+export const AUTOPLAY_CONFIDENCE_MAX = 1;
+export const AUTOPLAY_CONFIDENCE_START = 0.2;
+
+const CLEAN_WAVE_CONFIDENCE_GAIN = 0.16;
+const LEAK_CONFIDENCE_HIT = 0.1;
+const PER_LEAK_CONFIDENCE_LOSS = 0.12;
+
 const CARDINAL = [
   { dx: 0, dz: -1 },
   { dx: 1, dz: 0 },
@@ -63,6 +71,8 @@ export type AutoplaySnapshot = {
   waveLevel: number;
   isNight: boolean;
   waveClearOpen: boolean;
+  /** 0 = rattled (stack towers), 1 = confident (expand instead). */
+  confidence: number;
   standingForestKeys: ReadonlySet<string>;
   revealedTiles: ReadonlyMap<string, RevealedTileKind>;
   builtMineKeys: ReadonlySet<string>;
@@ -76,6 +86,8 @@ export type AutoplaySnapshot = {
   roadKeys: ReadonlySet<string>;
   /** Global keys considered "frontier" (road, road-clearance, or revealed buildable). */
   openKeys: ReadonlySet<string>;
+  /** Tiles the player can actually click / clear (excludes preview spawn levels). */
+  interactableKeys: ReadonlySet<string>;
   /** Global keys where a tower may be placed. */
   buildableTowerKeys: ReadonlyArray<{ gx: number; gz: number; key: string }>;
   unusedGates: readonly LevelEdge[];
@@ -122,6 +134,31 @@ export function autoplayTileAllowsTower(
   });
 }
 
+export function countAutoplayLeaks(
+  leaks: Readonly<Partial<Record<string, number>>>,
+): number {
+  let total = 0;
+  for (const value of Object.values(leaks)) {
+    total += value ?? 0;
+  }
+  return total;
+}
+
+export function nextAutoplayConfidence(
+  current: number,
+  leakCount: number,
+): number {
+  const next =
+    leakCount <= 0
+      ? current + CLEAN_WAVE_CONFIDENCE_GAIN
+      : current - LEAK_CONFIDENCE_HIT - leakCount * PER_LEAK_CONFIDENCE_LOSS;
+
+  return Math.min(
+    AUTOPLAY_CONFIDENCE_MAX,
+    Math.max(AUTOPLAY_CONFIDENCE_MIN, next),
+  );
+}
+
 function pickWeightedFrom<T>(items: readonly T[], weights: readonly number[]): T {
   const total = weights.reduce((sum, weight) => sum + weight, 0);
   let roll = Math.random() * total;
@@ -136,7 +173,6 @@ function pickWeightedFrom<T>(items: readonly T[], weights: readonly number[]): T
 
 const PREMIUM_TOWER_IDS: readonly TowerTypeId[] = ["mage", "ballista", "cannon"];
 const CHEAP_TOWER_ID: TowerTypeId = "archer";
-const MIN_BUILDABLE_PLOTS_BEFORE_TOWERS = 2;
 
 function countTowersOfType(snap: AutoplaySnapshot, typeId: TowerTypeId): number {
   let count = 0;
@@ -158,6 +194,10 @@ function premiumTowerCount(snap: AutoplaySnapshot): number {
 
 /** Bank gold toward the next premium tower instead of dumping it on archers. */
 function saveTargetTower(snap: AutoplaySnapshot): TowerTypeId | null {
+  if (snap.confidence < 0.35) {
+    return null;
+  }
+
   const archerCount = countTowersOfType(snap, CHEAP_TOWER_ID);
   const mageCount = countTowersOfType(snap, "mage");
   const ballistaCount = countTowersOfType(snap, "ballista");
@@ -186,12 +226,95 @@ function saveTargetTower(snap: AutoplaySnapshot): TowerTypeId | null {
   return null;
 }
 
-function desiredBuildablePlots(waveLevel: number): number {
-  return Math.min(14, 3 + waveLevel * 2);
+function desiredTowerCount(snap: AutoplaySnapshot): number {
+  const panic = 1 - snap.confidence;
+  const calm = 1 + Math.ceil(snap.waveLevel / 2);
+  const stressed = 4 + snap.waveLevel * 3;
+  return Math.max(1, Math.round(calm + (stressed - calm) * panic));
+}
+
+function wantsMoreTowers(snap: AutoplaySnapshot): boolean {
+  return snap.towers.length < desiredTowerCount(snap);
+}
+
+function desiredBuildablePlots(snap: AutoplaySnapshot): number {
+  return Math.min(18, desiredTowerCount(snap) + 2);
 }
 
 function wantsMoreTowerPlots(snap: AutoplaySnapshot): boolean {
-  return snap.buildableTowerKeys.length < desiredBuildablePlots(snap.waveLevel);
+  return snap.buildableTowerKeys.length < desiredBuildablePlots(snap);
+}
+
+function desiredEconomyBuildings(waveLevel: number): number {
+  return Math.min(6, Math.max(1, waveLevel));
+}
+
+/** Wood needed so farms / fishing huts are actually affordable once revealed. */
+function desiredWoodStockpile(snap: AutoplaySnapshot): number {
+  let need = Math.min(FISHING_HUT_COST.wood, 12 + snap.waveLevel * 10);
+
+  for (const [key, kind] of snap.revealedTiles) {
+    if (kind === "pond" && !snap.fishingHutKeys.has(key)) {
+      need = Math.max(need, FISHING_HUT_COST.wood);
+    }
+    if (kind === "fertile" && !snap.farmKeys.has(key)) {
+      need = Math.max(need, FARM_COST.wood);
+    }
+  }
+
+  return need;
+}
+
+function pendingEconomyTiles(snap: AutoplaySnapshot): number {
+  let count = 0;
+  for (const [key, kind] of snap.revealedTiles) {
+    if (kind === "goldDeposit" && !snap.builtMineKeys.has(key)) {
+      count += 1;
+    } else if (kind === "ironDeposit" && !snap.builtMineKeys.has(key)) {
+      count += 1;
+    } else if (kind === "pond" && !snap.fishingHutKeys.has(key)) {
+      count += 1;
+    } else if (kind === "fertile" && !snap.farmKeys.has(key)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function builtEconomyCount(snap: AutoplaySnapshot): number {
+  return snap.builtMineKeys.size + snap.farmKeys.size + snap.fishingHutKeys.size;
+}
+
+function wantsMapExpansion(snap: AutoplaySnapshot): boolean {
+  if (wantsMoreTowerPlots(snap)) {
+    return true;
+  }
+  if (snap.wood < desiredWoodStockpile(snap)) {
+    return true;
+  }
+  return (
+    builtEconomyCount(snap) + pendingEconomyTiles(snap) <
+    desiredEconomyBuildings(snap.waveLevel)
+  );
+}
+
+/** Keep enough gold for the first archer, or a premium tower we can buy this tick. */
+function goldReservedForTowers(snap: AutoplaySnapshot): number {
+  if (!wantsMoreTowers(snap)) {
+    return 0;
+  }
+
+  if (snap.towers.length === 0) {
+    return getTowerStats(CHEAP_TOWER_ID).cost;
+  }
+
+  const saveFor = saveTargetTower(snap);
+  if (!saveFor) {
+    return 0;
+  }
+
+  const cost = getTowerStats(saveFor).cost;
+  return snap.gold >= cost ? cost : 0;
 }
 
 function pickWeightedTower(
@@ -252,35 +375,92 @@ export function planFoodRecruits(resources: ArmyResources): ArmyUnitId[] {
   return plan;
 }
 
-function findCuttableTree(snap: AutoplaySnapshot): AutoplayAction | null {
-  if (snap.gold < TREE_CLEAR_COST) {
-    return null;
+function isFrontierNeighbor(
+  snap: AutoplaySnapshot,
+  gx: number,
+  gz: number,
+): boolean {
+  const key = `${gx}:${gz}`;
+  if (snap.openKeys.has(key)) {
+    return true;
   }
+  if (!snap.interactableKeys.has(key)) {
+    return false;
+  }
+  return !snap.standingForestKeys.has(key);
+}
 
+function cuttableTreeCandidates(
+  snap: AutoplaySnapshot,
+): { gx: number; gz: number; key: string }[] {
   const candidates: { gx: number; gz: number; key: string }[] = [];
 
   for (const key of snap.standingForestKeys) {
+    if (!snap.interactableKeys.has(key)) {
+      continue;
+    }
+
     const coord = parseKey(key);
     if (!coord) {
       continue;
     }
 
-    const nearOpen = neighbors(coord.gx, coord.gz).some((n) => {
-      const nKey = `${n.gx}:${n.gz}`;
-      return snap.openKeys.has(nKey);
-    });
+    const nearFrontier = neighbors(coord.gx, coord.gz).some((n) =>
+      isFrontierNeighbor(snap, n.gx, n.gz),
+    );
 
-    if (nearOpen) {
+    if (nearFrontier) {
       candidates.push({ ...coord, key });
     }
   }
 
+  return candidates;
+}
+
+function findCuttableTree(
+  snap: AutoplaySnapshot,
+  reserveGold = 0,
+): AutoplayAction | null {
+  if (snap.gold < TREE_CLEAR_COST + reserveGold) {
+    return null;
+  }
+
+  const candidates = cuttableTreeCandidates(snap);
   if (candidates.length === 0) {
     return null;
   }
 
   const pick = candidates[Math.floor(Math.random() * candidates.length)]!;
   return { type: "cutTree", gx: pick.gx, gz: pick.gz };
+}
+
+function findUnlockGate(snap: AutoplaySnapshot): AutoplayAction | null {
+  if (snap.unusedGates.length === 0) {
+    return null;
+  }
+  if (snap.towers.length < 1) {
+    return null;
+  }
+  if (snap.gold < snap.edgeGateCost) {
+    return null;
+  }
+
+  const edge =
+    snap.unusedGates[Math.floor(Math.random() * snap.unusedGates.length)]!;
+  return { type: "unlockGate", edge };
+}
+
+function shouldUnlockGate(snap: AutoplaySnapshot): boolean {
+  if (snap.unusedGates.length === 0 || snap.towers.length < 1) {
+    return false;
+  }
+  if (snap.gold < snap.edgeGateCost) {
+    return false;
+  }
+  if (cuttableTreeCandidates(snap).length === 0) {
+    return true;
+  }
+  return snap.waveLevel >= 2;
 }
 
 function findBuildAction(snap: AutoplaySnapshot): AutoplayAction | null {
@@ -361,8 +541,22 @@ function tileIsInRangeOfRoad(
   return false;
 }
 
+function countInRangeTowerPlots(
+  snap: AutoplaySnapshot,
+  typeId: TowerTypeId = CHEAP_TOWER_ID,
+): number {
+  const roads = parseRoadCoords(snap.roadKeys);
+  let count = 0;
+  for (const tile of snap.buildableTowerKeys) {
+    if (tileIsInRangeOfRoad(tile.gx, tile.gz, typeId, snap.hillKeys, roads)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
 function findPlaceTower(snap: AutoplaySnapshot): AutoplayAction | null {
-  if (snap.buildableTowerKeys.length === 0) {
+  if (!wantsMoreTowers(snap) || snap.buildableTowerKeys.length === 0) {
     return null;
   }
 
@@ -437,34 +631,58 @@ export function chooseAutoplayAction(
     return null;
   }
 
-  const build = findBuildAction(snap);
-  if (build) {
-    return build;
-  }
+  const needTowers = wantsMoreTowers(snap);
 
-  const needsPlotsNow =
-    snap.buildableTowerKeys.length < MIN_BUILDABLE_PLOTS_BEFORE_TOWERS;
-  if (needsPlotsNow) {
-    const expand = findCuttableTree(snap);
-    if (expand) {
-      return expand;
+  if (!needTowers) {
+    const build = findBuildAction(snap);
+    if (build) {
+      return build;
     }
-  }
 
-  const tower = findPlaceTower(snap);
-  if (tower) {
-    return tower;
-  }
+    if (shouldUnlockGate(snap)) {
+      const gate = findUnlockGate(snap);
+      if (gate) {
+        return gate;
+      }
+    }
 
-  const upgrade = findUpgrade(snap);
-  if (upgrade) {
-    return upgrade;
-  }
+    if (snap.towers.length >= 1 && wantsMapExpansion(snap)) {
+      const expand = findCuttableTree(snap);
+      if (expand) {
+        return expand;
+      }
+    }
 
-  if (wantsMoreTowerPlots(snap)) {
-    const expand = findCuttableTree(snap);
-    if (expand) {
-      return expand;
+    const upgrade = findUpgrade(snap);
+    if (upgrade) {
+      return upgrade;
+    }
+  } else {
+    if (countInRangeTowerPlots(snap) === 0) {
+      const expand = findCuttableTree(snap, goldReservedForTowers(snap));
+      if (expand) {
+        return expand;
+      }
+    }
+
+    const tower = findPlaceTower(snap);
+    if (tower) {
+      return tower;
+    }
+
+    const upgrade = findUpgrade(snap);
+    if (upgrade) {
+      return upgrade;
+    }
+
+    if (
+      snap.gold < getTowerStats(CHEAP_TOWER_ID).cost &&
+      countInRangeTowerPlots(snap) === 0
+    ) {
+      const expand = findCuttableTree(snap);
+      if (expand) {
+        return expand;
+      }
     }
   }
 
@@ -477,15 +695,17 @@ export function chooseAutoplayAction(
     return { type: "sendAttack" };
   }
 
-  const cut = findCuttableTree(snap);
-  if (cut) {
-    return cut;
-  }
+  if (!needTowers) {
+    const cut = findCuttableTree(snap);
+    if (cut) {
+      return cut;
+    }
 
-  if (snap.unusedGates.length > 0 && snap.gold >= snap.edgeGateCost) {
-    const edge =
-      snap.unusedGates[Math.floor(Math.random() * snap.unusedGates.length)]!;
-    return { type: "unlockGate", edge };
+    if (snap.unusedGates.length > 0 && snap.gold >= snap.edgeGateCost) {
+      const edge =
+        snap.unusedGates[Math.floor(Math.random() * snap.unusedGates.length)]!;
+      return { type: "unlockGate", edge };
+    }
   }
 
   return null;

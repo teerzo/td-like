@@ -8,6 +8,7 @@ import type { EnemyTypeId } from "@/lib/enemy-types";
 /** Player-recruitable army units (also used as night-wave types). */
 export type ArmyUnitId =
   | "peon"
+  | "bat"
   | "archer"
   | "knight"
   | "catapult"
@@ -15,6 +16,7 @@ export type ArmyUnitId =
 
 export const ARMY_UNIT_IDS: ArmyUnitId[] = [
   "peon",
+  "bat",
   "archer",
   "knight",
   "catapult",
@@ -41,6 +43,7 @@ const COST_RESOURCES: ResourceId[] = ["food", "gold", "iron", "wood", "stone"];
 
 export const ARMY_UNIT_COSTS: Record<ArmyUnitId, ArmyUnitCost> = {
   peon: { food: 1 },
+  bat: { food: 2 },
   archer: { food: 10, wood: 4 },
   knight: { food: 20, iron: 6 },
   catapult: { food: 35, stone: 8 },
@@ -52,6 +55,7 @@ export type ArmyRoster = Record<ArmyUnitId, number>;
 export function createEmptyArmy(): ArmyRoster {
   return {
     peon: 0,
+    bat: 0,
     archer: 0,
     knight: 0,
     catapult: 0,
@@ -164,6 +168,7 @@ export function missingUnitCostHint(
 export function isArmyUnitId(typeId: EnemyTypeId): typeId is ArmyUnitId {
   return (
     typeId === "peon" ||
+    typeId === "bat" ||
     typeId === "archer" ||
     typeId === "knight" ||
     typeId === "catapult" ||
