@@ -89,7 +89,7 @@ function addShaftBattlements(
   }
 }
 
-function buildRookTownBlocks() {
+function buildCannonBlocks() {
   const blocks = new Map<string, Block>();
   const townRadius = 2;
   const shaftRadius = 1;
@@ -153,6 +153,25 @@ function buildArcherBlocks() {
   return [...blocks.values()];
 }
 
+/** Stone frame with a heavy bolt arm — anti-tank siege piece. */
+function buildBallistaBlocks() {
+  const blocks = new Map<string, Block>();
+
+  addSolidBox(blocks, -2, 2, 0, 0, -2, 2, { kind: "castle", id: "stone" });
+  addSolidBox(blocks, -1, 1, 1, 2, -1, 1, { kind: "castle", id: "wood" });
+
+  for (const z of [-1, 0, 1] as const) {
+    addBlock(blocks, 2, 1, z, { kind: "castle", id: "wood" });
+    addBlock(blocks, 3, 1, z, { kind: "castle", id: "wood" });
+  }
+
+  addBlock(blocks, 4, 1, 0, { kind: "castle", id: "stone" });
+  addBlock(blocks, 0, 3, 0, { kind: "castle", id: "wood" });
+  addBlock(blocks, 0, 4, 0, { kind: "castle", id: "roof" });
+
+  return [...blocks.values()];
+}
+
 /** Squatter mage keep — brick walls, stone crown, peaked roof, water tip. */
 function buildMageBlocks() {
   const blocks = new Map<string, Block>();
@@ -182,8 +201,9 @@ function buildMageBlocks() {
 }
 
 const TOWER_BLOCKS: Record<TowerTypeId, Block[]> = {
-  rook: buildRookTownBlocks(),
+  cannon: buildCannonBlocks(),
   archer: buildArcherBlocks(),
+  ballista: buildBallistaBlocks(),
   mage: buildMageBlocks(),
 };
 
@@ -199,9 +219,19 @@ function resolveBlockMap(
   return pixelMaps[material.id];
 }
 
+/** Y offset for tower previews inside circular build-action menu icons. */
+export const TOWER_MENU_PREVIEW_POSITION: [number, number, number] = [
+  0, -0.58, 0,
+];
+
+/** Camera for tower menu icon previews — pitched down so models sit in the circle. */
+export const TOWER_MENU_PREVIEW_CAMERA: [number, number, number] = [
+  1.35, 1.05, 1.35,
+];
+
 export function TowerModel({
   position = [0, 0, 0],
-  typeId = "rook",
+  typeId = "cannon",
 }: {
   position?: [number, number, number];
   typeId?: TowerTypeId;

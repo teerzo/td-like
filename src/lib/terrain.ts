@@ -1,6 +1,6 @@
 export const TERRAIN_SIZE = 11;
 export const SPAWN_TERRAIN_SIZE_MIN = 3;
-export const SPAWN_TERRAIN_SIZE_MAX = 11;
+export const SPAWN_TERRAIN_SIZE_MAX = 7;
 export const TILE_SIZE = 1;
 export const TILE_GAP = 0.12;
 

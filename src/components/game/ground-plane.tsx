@@ -28,6 +28,7 @@ export type GrassTilePointer = {
 export type GrassSelectionProps = {
   selectedTileKey?: string | null;
   onSelectTile?: (coord: GlobalGridCoord, pointer: GrassTilePointer) => void;
+  onSelectTreeTile?: (coord: GlobalGridCoord, pointer: GrassTilePointer) => void;
 };
 
 function useGrassMaterials(opacity = 1) {

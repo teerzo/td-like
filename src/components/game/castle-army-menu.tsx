@@ -1,16 +1,20 @@
 "use client";
 
+import { Feather, Heart, Shield, SportShoe } from "lucide-react";
+import type { ReactNode } from "react";
+
 import {
   BuildIconPreview,
 } from "@/components/game/build-action-menu";
 import { EnemyModel } from "@/components/game/models";
-import { ResourceAmount } from "@/components/game/resource-icon";
-import { getEnemyStats } from "@/lib/enemy-types";
+import { ResourceIcon } from "@/components/game/resource-icon";
+import { getEnemyStats, type EnemyMovementType } from "@/lib/enemy-types";
 import {
-  ARMY_UNIT_COSTS,
   ARMY_UNIT_IDS,
   armyTotal,
   canAffordUnit,
+  getUnitCostLines,
+  missingUnitCostHint,
   type ArmyRoster,
   type ArmyUnitId,
 } from "@/lib/army-types";
@@ -23,26 +27,72 @@ export type CastleArmyMenuState = {
 type CastleArmyMenuProps = {
   menu: CastleArmyMenuState;
   army: ArmyRoster;
+  gold: number;
+  iron: number;
+  wood: number;
+  stone: number;
   food: number;
   isDay: boolean;
   raidStatus: string | null;
   onRecruit: (unitId: ArmyUnitId) => void;
+  onClear: () => void;
   onSendAttack: () => void;
   onClose: () => void;
 };
 
+function PortraitStatCell({
+  className,
+  children,
+}: {
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className={`flex flex-1 items-center justify-center gap-0.5 py-1.5 text-xs font-bold tabular-nums ${className ?? ""}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+function EnemyMovementIcon({
+  movementType,
+}: {
+  movementType: EnemyMovementType;
+}) {
+  const isFlying = movementType === "flying";
+
+  return (
+    <span title={isFlying ? "Flying" : "Ground"} aria-hidden>
+      {isFlying ? (
+        <Feather className="text-sky-300" size={12} strokeWidth={2.25} />
+      ) : (
+        <SportShoe className="text-amber-200" size={12} strokeWidth={2.25} />
+      )}
+    </span>
+  );
+}
+
 export function CastleArmyMenu({
   menu: _menu,
   army,
+  gold,
+  iron,
+  wood,
+  stone,
   food,
   isDay,
   raidStatus,
   onRecruit,
+  onClear,
   onSendAttack,
   onClose,
 }: CastleArmyMenuProps) {
   const total = armyTotal(army);
   const canSend = isDay && total > 0;
+  const canClear = isDay && total > 0;
+  const resources = { gold, iron, wood, stone, food };
 
   return (
     <>
@@ -53,15 +103,15 @@ export function CastleArmyMenu({
         onClick={onClose}
       />
       <div
-        className="pointer-events-auto absolute top-1/2 left-1/2 z-30 w-[min(92vw,420px)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-amber-400/35 bg-gradient-to-br from-[#152033]/97 to-[#0e121a]/97 p-4 shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur-md"
+        className="pointer-events-auto absolute top-1/2 left-1/2 z-30 w-[min(94vw,500px)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-amber-400/35 bg-gradient-to-br from-[#152033]/97 to-[#0e121a]/97 p-5 shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur-md"
         role="dialog"
         aria-label="Castle army"
       >
-        <div className="relative mb-3 pr-8">
-          <h2 className="text-lg font-semibold tracking-wide text-amber-100">
+        <div className="relative mb-4 pr-10">
+          <h2 className="text-2xl font-semibold tracking-wide text-amber-100">
             Army
           </h2>
-          <p className="mt-0.5 text-[11px] text-amber-200/60">
+          <p className="mt-1 text-sm text-amber-200/70">
             {isDay
               ? "Recruit by day, send a raid when ready."
               : "Night raids are inbound — manage your army during the day."}
@@ -69,80 +119,127 @@ export function CastleArmyMenu({
           <button
             type="button"
             aria-label="Close army menu"
-            className="absolute top-0 right-0 rounded-md px-1.5 py-0.5 text-sm text-amber-200/60 transition hover:bg-white/10 hover:text-amber-100"
+            className="absolute top-0 right-0 rounded-md px-2 py-1 text-base text-amber-200/60 transition hover:bg-white/10 hover:text-amber-100"
             onClick={onClose}
           >
             ✕
           </button>
         </div>
 
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+        <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">
           {ARMY_UNIT_IDS.map((unitId) => {
             const stats = getEnemyStats(unitId);
-            const foodCost = ARMY_UNIT_COSTS[unitId].food;
-            const affordable = canAffordUnit(unitId, { food });
+            const costLines = getUnitCostLines(unitId);
+            const affordable = canAffordUnit(unitId, resources);
             const recruitDisabled = !isDay || !affordable;
+            const needHint = missingUnitCostHint(unitId, resources);
 
             return (
-              <div
-                key={unitId}
-                className="flex flex-col items-center gap-1.5 rounded-xl border border-white/10 bg-black/25 p-2"
-              >
-                <div className="h-16 w-16 overflow-hidden rounded-full border border-white/25 bg-[#1a2332]">
-                  <BuildIconPreview
-                    cameraPosition={
-                      unitId === "dragon" || unitId === "catapult"
-                        ? [2.0, 1.6, 2.0]
-                        : [1.4, 1.35, 1.4]
+              <div key={unitId} className="flex flex-col gap-1">
+                <div className="flex flex-col overflow-hidden rounded-xl border border-white/15 bg-gradient-to-b from-[#1a2332]/95 to-[#0e121a]/95 shadow-[0_4px_16px_rgba(0,0,0,0.35)]">
+                  <div className="flex border-b border-white/10">
+                    <PortraitStatCell className="flex-col gap-0.5 border-r border-white/10 bg-white/5 px-1 text-stone-100">
+                      {costLines.map((line) => (
+                        <span
+                          key={line.resource}
+                          className="inline-flex items-center gap-0.5"
+                        >
+                          <ResourceIcon resource={line.resource} size={11} />
+                          {line.amount}
+                        </span>
+                      ))}
+                    </PortraitStatCell>
+                    <PortraitStatCell className="bg-white/5">
+                      <EnemyMovementIcon movementType={stats.movementType} />
+                    </PortraitStatCell>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={recruitDisabled}
+                    title={
+                      !isDay
+                        ? "Recruit during the day"
+                        : affordable
+                          ? `Recruit ${stats.label}`
+                          : needHint
                     }
-                  >
-                    <EnemyModel typeId={unitId} />
-                  </BuildIconPreview>
-                </div>
-                <span className="text-xs font-medium text-stone-100">
-                  {stats.label}
-                </span>
-                <span className="flex flex-col items-center gap-0.5">
-                  <span className="text-[10px] tabular-nums text-stone-300">
-                    x{army[unitId]}
-                  </span>
-                  <ResourceAmount
-                    resource="food"
-                    amount={foodCost}
-                    className="text-white"
-                  />
-                </span>
-                <button
-                  type="button"
-                  disabled={recruitDisabled}
-                  title={
-                    !isDay
-                      ? "Recruit during the day"
-                      : affordable
+                    aria-label={
+                      affordable && isDay
                         ? `Recruit ${stats.label}`
-                        : `Need x${foodCost} food`
-                  }
-                  className="w-full rounded-md border border-white/20 bg-white/10 px-2 py-1 text-xs font-semibold text-white transition enabled:hover:border-amber-300/60 enabled:hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-40"
-                  onClick={() => onRecruit(unitId)}
-                >
-                  +
-                </button>
+                        : `Cannot recruit ${stats.label}`
+                    }
+                    className="group relative aspect-[4/5] w-full transition enabled:cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                    onClick={() => onRecruit(unitId)}
+                  >
+                    <div className="absolute inset-0 overflow-hidden bg-[#121820] transition group-enabled:group-hover:bg-[#182030]">
+                      <BuildIconPreview
+                        cameraPosition={
+                          unitId === "dragon" || unitId === "catapult"
+                            ? [2.0, 1.6, 2.0]
+                            : [1.4, 1.35, 1.4]
+                        }
+                      >
+                        <EnemyModel typeId={unitId} />
+                      </BuildIconPreview>
+                    </div>
+                    <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/5 transition group-enabled:group-hover:ring-amber-400/30" />
+                  </button>
+
+                  <div className="border-t border-white/10 bg-[#0e121a]/40 px-2 py-1.5 text-center text-xs font-semibold text-stone-100">
+                    {stats.label}
+                  </div>
+
+                  <div className="flex border-t border-white/10">
+                    <PortraitStatCell className="border-r border-white/10 bg-rose-500/10 text-rose-300">
+                      <Heart
+                        aria-hidden
+                        className="fill-rose-400 text-rose-400"
+                        size={11}
+                        strokeWidth={1.75}
+                      />
+                      {stats.health}
+                    </PortraitStatCell>
+                    <PortraitStatCell className="bg-sky-500/10 text-sky-200">
+                      <Shield
+                        aria-hidden
+                        className="fill-sky-300 text-sky-300"
+                        size={11}
+                        strokeWidth={1.75}
+                      />
+                      {stats.armor}
+                    </PortraitStatCell>
+                  </div>
+                </div>
+                <div className="text-center text-xs font-bold tabular-nums text-emerald-400">
+                  x{army[unitId]}
+                </div>
               </div>
             );
           })}
         </div>
 
-        <div className="mt-3 flex flex-col gap-2">
-          <button
-            type="button"
-            disabled={!canSend}
-            className="w-full rounded-xl border border-amber-300/50 bg-amber-500/20 px-3 py-2 text-sm font-semibold text-amber-50 transition enabled:hover:bg-amber-500/35 disabled:cursor-not-allowed disabled:opacity-40"
-            onClick={onSendAttack}
-          >
-            Send Attack
-          </button>
+        <div className="mt-4 flex flex-col gap-2.5">
+          <div className="grid grid-cols-2 gap-2.5">
+            <button
+              type="button"
+              disabled={!canClear}
+              className="rounded-xl border border-white/20 bg-white/5 px-3 py-2.5 text-base font-semibold text-white/85 transition enabled:hover:border-rose-300/50 enabled:hover:bg-rose-500/15 enabled:hover:text-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
+              onClick={onClear}
+            >
+              Clear
+            </button>
+            <button
+              type="button"
+              disabled={!canSend}
+              className="rounded-xl border border-amber-300/50 bg-amber-500/20 px-3 py-2.5 text-base font-semibold text-amber-50 transition enabled:hover:bg-amber-500/35 disabled:cursor-not-allowed disabled:opacity-40"
+              onClick={onSendAttack}
+            >
+              Send Attack
+            </button>
+          </div>
           {raidStatus ? (
-            <p className="text-center text-[11px] text-emerald-300/90" aria-live="polite">
+            <p className="text-center text-sm text-emerald-300/90" aria-live="polite">
               {raidStatus}
             </p>
           ) : null}

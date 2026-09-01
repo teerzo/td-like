@@ -5,11 +5,17 @@ import { useRef } from "react";
 import type { RefObject } from "react";
 
 import type { DamageType } from "@/lib/damage-types";
+import type { EnemyMovementType } from "@/lib/enemy-types";
 import {
   getTowerMuzzlePosition,
   isWithinTowerStatsRange,
+  pickTowerTarget,
 } from "@/lib/tower-combat";
-import { getTowerStatsAtLevel, type TowerTypeId } from "@/lib/tower-types";
+import {
+  canTowerTargetMovement,
+  getTowerStatsAtLevel,
+  type TowerTypeId,
+} from "@/lib/tower-types";
 
 export type PlacedTower = {
   id: number;
@@ -41,7 +47,7 @@ type TowerDefenseSystemProps = {
   towers: PlacedTower[];
   enemyPositionsRef: RefObject<Map<number, [number, number, number]>>;
   pendingTargetIdsRef: RefObject<Set<number>>;
-  enemyIds: number[];
+  enemyTargets: { id: number; movementType: EnemyMovementType; hp: number }[];
   onFireProjectile: (projectile: FiredProjectile) => void;
 };
 
@@ -49,7 +55,7 @@ export function TowerDefenseSystem({
   towers,
   enemyPositionsRef,
   pendingTargetIdsRef,
-  enemyIds,
+  enemyTargets,
   onFireProjectile,
 }: TowerDefenseSystemProps) {
   const cooldownsRef = useRef(new Map<number, number>());
@@ -57,7 +63,7 @@ export function TowerDefenseSystem({
 
   useFrame((_, delta) => {
     const positions = enemyPositionsRef.current;
-    if (!positions || towers.length === 0 || enemyIds.length === 0) {
+    if (!positions || towers.length === 0 || enemyTargets.length === 0) {
       return;
     }
 
@@ -70,13 +76,16 @@ export function TowerDefenseSystem({
         continue;
       }
 
-      let nearestEnemyId: number | null = null;
-      let nearestDistance = Number.POSITIVE_INFINITY;
+      const candidates: { id: number; hp: number; distance: number }[] = [];
       const groundY = tower.groundY ?? 0;
       const towerMuzzle = getTowerMuzzlePosition(tower.gx, tower.gz, groundY);
 
-      for (const enemyId of enemyIds) {
+      for (const { id: enemyId, movementType, hp } of enemyTargets) {
         if (pendingTargetIdsRef.current?.has(enemyId)) {
+          continue;
+        }
+
+        if (!canTowerTargetMovement(stats, movementType)) {
           continue;
         }
 
@@ -100,22 +109,23 @@ export function TowerDefenseSystem({
           continue;
         }
 
-        const distance = Math.hypot(
-          enemyX - towerMuzzle[0],
-          enemyZ - towerMuzzle[2],
-        );
-
-        if (distance < nearestDistance) {
-          nearestDistance = distance;
-          nearestEnemyId = enemyId;
-        }
+        candidates.push({
+          id: enemyId,
+          hp,
+          distance: Math.hypot(
+            enemyX - towerMuzzle[0],
+            enemyZ - towerMuzzle[2],
+          ),
+        });
       }
 
-      if (nearestEnemyId === null) {
+      const selectedEnemyId = pickTowerTarget(candidates, stats.targetPriority);
+
+      if (selectedEnemyId === null) {
         continue;
       }
 
-      const targetPosition = positions.get(nearestEnemyId);
+      const targetPosition = positions.get(selectedEnemyId);
       if (!targetPosition) {
         continue;
       }
@@ -133,7 +143,7 @@ export function TowerDefenseSystem({
       onFireProjectile({
         id: projectileId,
         towerId: tower.id,
-        targetEnemyId: nearestEnemyId,
+        targetEnemyId: selectedEnemyId,
         typeId: stats.id,
         damage: stats.damage,
         damageType: stats.damageType,
@@ -143,7 +153,7 @@ export function TowerDefenseSystem({
         to,
       });
 
-      pendingTargetIdsRef.current?.add(nearestEnemyId);
+      pendingTargetIdsRef.current?.add(selectedEnemyId);
       cooldownsRef.current.set(tower.id, stats.attackCooldown);
     }
   });

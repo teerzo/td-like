@@ -3,6 +3,8 @@
 import { useMemo } from "react";
 import { ExtrudeGeometry, Shape } from "three";
 
+import type { GrassTilePointer } from "@/components/game/ground-plane";
+import { DebugHitbox } from "@/components/game/debug-hitbox";
 import { PixelTextureMaterial } from "@/lib/pixel-art/use-pixel-texture";
 import { useDirtRoadSpriteMap } from "@/lib/pixel-art/use-dirt-road-sprite-maps";
 import { TILE_SIZE } from "@/lib/terrain";
@@ -60,12 +62,14 @@ export function PondModel({
   rotation = 0,
   scale = 1,
   seed = 1,
+  onSelect,
 }: {
   position?: [number, number, number];
   rotation?: number;
   scale?: number;
   /** Stable per-tile seed for the irregular outline. */
   seed?: number;
+  onSelect?: (pointer: GrassTilePointer) => void;
 }) {
   const dirtMap = useDirtRoadSpriteMap("dirt");
 
@@ -87,14 +91,60 @@ export function PondModel({
     };
   }, [seed]);
 
+  function handleClick(event: {
+    stopPropagation: () => void;
+    clientX: number;
+    clientY: number;
+  }) {
+    if (!onSelect) {
+      return;
+    }
+
+    event.stopPropagation();
+    onSelect({ clientX: event.clientX, clientY: event.clientY });
+  }
+
+  function handlePointerOver(event: { stopPropagation: () => void }) {
+    if (!onSelect) {
+      return;
+    }
+
+    event.stopPropagation();
+    document.body.style.cursor = "pointer";
+  }
+
+  function handlePointerOut() {
+    if (!onSelect) {
+      return;
+    }
+
+    document.body.style.cursor = "auto";
+  }
+
+  const pointerProps = onSelect
+    ? {
+        onClick: handleClick,
+        onPointerOver: handlePointerOver,
+        onPointerOut: handlePointerOut,
+      }
+    : {};
+
   return (
     <group position={position} rotation={[0, rotation, 0]} scale={scale}>
+      {onSelect ? (
+        <DebugHitbox
+          size={[TILE_SIZE * 0.85, 0.35, TILE_SIZE * 0.85]}
+          position={[0, 0.18, 0]}
+          color="#38bdf8"
+        />
+      ) : null}
       <mesh
         geometry={rimGeometry}
         position={[0, 0, 0]}
         rotation={[-Math.PI / 2, 0, 0]}
         castShadow={false}
         receiveShadow
+        {...pointerProps}
       >
         <meshStandardMaterial map={dirtMap} roughness={0.95} metalness={0} />
       </mesh>
@@ -103,9 +153,20 @@ export function PondModel({
         position={[0, RIM_HEIGHT * 0.35, 0]}
         rotation={[-Math.PI / 2, 0, 0]}
         receiveShadow
+        {...pointerProps}
       >
         <PixelTextureMaterial texture="water" repeat={[2, 2]} />
       </mesh>
+      {onSelect ? (
+        <mesh
+          position={[0, 0.08, 0]}
+          rotation={[-Math.PI / 2, 0, 0]}
+          {...pointerProps}
+        >
+          <planeGeometry args={[TILE_SIZE * 0.8, TILE_SIZE * 0.8]} />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+        </mesh>
+      ) : null}
     </group>
   );
 }

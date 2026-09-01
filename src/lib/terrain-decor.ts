@@ -85,7 +85,7 @@ function isBlockedTile(
   return !!blockedTiles?.some((tile) => tile.x === x && tile.z === z);
 }
 
-function isEligibleDecorTile(
+export function isEligibleDecorTile(
   layout: WorldLayout,
   x: number,
   z: number,
@@ -172,6 +172,16 @@ export function generateTerrainDecor(
 
 export function decorOmitsGrass(kind: TerrainDecorKind) {
   return kind === "pond" || kind === "mountain" || kind === "hill";
+}
+
+/** Local pond tiles for a layout (deterministic, same as decor generation). */
+export function collectPondTiles(
+  layout: WorldLayout,
+  options: GenerateTerrainDecorOptions = {},
+): GridCoord[] {
+  return generateTerrainDecor(layout, options)
+    .filter((placement) => placement.kind === "pond")
+    .map((placement) => ({ x: placement.x, z: placement.z }));
 }
 
 /** Local hill tiles for a layout (deterministic, same as decor generation). */

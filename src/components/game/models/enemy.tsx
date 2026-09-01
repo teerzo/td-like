@@ -7,16 +7,6 @@ const ENEMY_PALETTES: Record<
   EnemyTypeId,
   { body: string; accent: string; emissive: string }
 > = {
-  grunt: {
-    body: "#c0392b",
-    accent: "#e74c3c",
-    emissive: "#922b21",
-  },
-  flyer: {
-    body: "#2563eb",
-    accent: "#60a5fa",
-    emissive: "#1e3a8a",
-  },
   peon: {
     body: "#a16207",
     accent: "#fde68a",
@@ -279,51 +269,8 @@ function DragonModel({
   );
 }
 
-function SimpleEnemyModel({
-  body,
-  accent,
-  emissive,
-}: {
-  body: string;
-  accent: string;
-  emissive: string;
-}) {
-  const bodyHeight = VOXEL * 1.35;
-
-  return (
-    <group>
-      <mesh position={[0, bodyHeight / 2, 0]}>
-        <boxGeometry args={[VOXEL * 1.35, bodyHeight, VOXEL * 1.35]} />
-        <meshStandardMaterial
-          color={body}
-          emissive={emissive}
-          emissiveIntensity={0.35}
-          roughness={0.85}
-        />
-      </mesh>
-      <mesh position={[0, bodyHeight + VOXEL * 0.55, 0]}>
-        <boxGeometry args={[VOXEL * 1.05, VOXEL * 1.05, VOXEL * 1.05]} />
-        <meshStandardMaterial
-          color={accent}
-          emissive={emissive}
-          emissiveIntensity={0.25}
-          roughness={0.85}
-        />
-      </mesh>
-      <mesh position={[VOXEL * 0.22, bodyHeight + VOXEL * 0.65, VOXEL * 0.42]}>
-        <boxGeometry args={[0.07, 0.07, 0.07]} />
-        <meshStandardMaterial color="#140909" roughness={0.8} />
-      </mesh>
-      <mesh position={[-VOXEL * 0.22, bodyHeight + VOXEL * 0.65, VOXEL * 0.42]}>
-        <boxGeometry args={[0.07, 0.07, 0.07]} />
-        <meshStandardMaterial color="#140909" roughness={0.8} />
-      </mesh>
-    </group>
-  );
-}
-
 export function EnemyModel({
-  typeId = "grunt",
+  typeId = "peon",
 }: {
   typeId?: EnemyTypeId;
 }) {
@@ -340,7 +287,5 @@ export function EnemyModel({
       return <CatapultModel {...palette} />;
     case "dragon":
       return <DragonModel {...palette} />;
-    default:
-      return <SimpleEnemyModel {...palette} />;
   }
 }

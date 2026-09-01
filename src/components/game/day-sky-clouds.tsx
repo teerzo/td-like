@@ -3,6 +3,7 @@
 import { useFrame } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
 import {
+  Color,
   Group,
   MathUtils,
   MeshBasicMaterial,
@@ -64,8 +65,10 @@ function buildCloudSpecs(): CloudSpec[] {
 }
 
 const sharedGeometry = new SphereGeometry(1.1, 8, 6);
+const DAY_CLOUD_COLOR = new Color("#f2f6fb");
+const NIGHT_CLOUD_COLOR = new Color("#7a8cad");
 const sharedMaterial = new MeshBasicMaterial({
-  color: "#f2f6fb",
+  color: DAY_CLOUD_COLOR,
   transparent: true,
   opacity: 0.72,
   depthWrite: false,
@@ -76,7 +79,7 @@ type DaySkyCloudsProps = {
   isNight: boolean;
 };
 
-/** Soft sky puffs that drift across the map by day and fade out at night. */
+/** Soft sky puffs that drift across the map; color and opacity follow day/night. */
 export function DaySkyClouds({ isNight }: DaySkyCloudsProps) {
   const rootRef = useRef<Group>(null);
   const dayAmountRef = useRef(isNight ? 0 : 1);
@@ -92,14 +95,15 @@ export function DaySkyClouds({ isNight }: DaySkyCloudsProps) {
       delta,
     );
     const day = dayAmountRef.current;
-    sharedMaterial.opacity = day * 0.72;
+    sharedMaterial.color.copy(NIGHT_CLOUD_COLOR).lerp(DAY_CLOUD_COLOR, day);
+    sharedMaterial.opacity = 0.2 + day * 0.52;
 
     const root = rootRef.current;
     if (!root) {
       return;
     }
 
-    root.visible = day > 0.02;
+    root.visible = sharedMaterial.opacity > 0.01;
 
     if (!root.visible) {
       return;

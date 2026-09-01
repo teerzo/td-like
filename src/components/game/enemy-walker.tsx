@@ -4,6 +4,7 @@ import { useFrame } from "@react-three/fiber";
 import { useRef } from "react";
 import type * as THREE from "three";
 
+import { EnemyHealthBar } from "@/components/game/enemy-health-bar";
 import { EnemyModel } from "@/components/game/models/enemy";
 import type { EnemyMovementType, EnemyTypeId } from "@/lib/enemy-types";
 
@@ -15,6 +16,8 @@ type EnemyWalkerProps = {
   typeId: EnemyTypeId;
   moveSpeed: number;
   movementType: EnemyMovementType;
+  hp: number;
+  maxHp: number;
   dying?: boolean;
   /** When true, the enemy holds position (daytime). */
   paused?: boolean;
@@ -28,6 +31,8 @@ export function EnemyWalker({
   typeId,
   moveSpeed,
   movementType,
+  hp,
+  maxHp,
   dying = false,
   paused = false,
   onReachExit,
@@ -130,6 +135,7 @@ export function EnemyWalker({
       <group ref={modelRef}>
         <EnemyModel typeId={typeId} />
       </group>
+      {!dying ? <EnemyHealthBar hp={hp} maxHp={maxHp} /> : null}
     </group>
   );
 }

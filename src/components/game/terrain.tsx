@@ -24,6 +24,8 @@ import {
   oreDepositVariant,
   MountainModel,
   mountainVariant,
+  FishingHutModel,
+  fishingHutVariant,
   PondModel,
   pondVariant,
   RockModel,
@@ -44,6 +46,12 @@ import {
   generateTerrainDecor,
   type TerrainDecorPlacement,
 } from "@/lib/terrain-decor";
+import {
+  localCoordInChunk,
+  revealedKindToDecorKind,
+  type BuiltMine,
+  type RevealedTileKind,
+} from "@/lib/forest-nothing";
 import {
   DIRT_TILE_SIZE,
   SHOW_DIRT_TILES,
@@ -91,6 +99,16 @@ type TerrainProps = {
   fertileDirt?: GridCoord | null;
   /** Whether a farm has been built on the fertile tile. */
   hasFarm?: boolean;
+  /** Global keys of ponds that already have a fishing hut. */
+  fishingHutKeys?: ReadonlySet<string>;
+  /** Forest Nothing: tiles still covered by standing trees. */
+  standingForestKeys?: ReadonlySet<string>;
+  /** Forest Nothing: tile type revealed after chopping a tree. */
+  revealedTiles?: ReadonlyMap<string, RevealedTileKind>;
+  /** Forest Nothing: constructed mines (multiple allowed). */
+  builtMines?: readonly BuiltMine[];
+  /** Global farms on revealed fertile tiles. */
+  farms?: readonly { gx: number; gz: number }[];
   /** Global tile keys where tree/rock decor was cleared. */
   clearedObstacleKeys?: ReadonlySet<string>;
 } & GrassSelectionProps;
@@ -247,12 +265,15 @@ function TerrainDecorModels({
   placements,
   origin,
   showMountains = true,
+  fishingHutKeys,
   selectedTileKey,
   onSelectTile,
+  onSelectTreeTile,
 }: {
   placements: TerrainDecorPlacement[];
   origin: ChunkOrigin;
   showMountains?: boolean;
+  fishingHutKeys?: ReadonlySet<string>;
 } & GrassSelectionProps) {
   return (
     <group>
@@ -261,6 +282,7 @@ function TerrainDecorModels({
         const gz = origin.gz + placement.z;
         const { x, z } = globalTileWorldPosition(gx, gz);
         const selectHandler = hillSelectHandler(gx, gz, onSelectTile);
+        const treeSelectHandler = hillSelectHandler(gx, gz, onSelectTreeTile);
 
         if (placement.kind === "tree") {
           const variant = treeVariant(placement.x, placement.z);
@@ -270,7 +292,7 @@ function TerrainDecorModels({
               position={[x + variant.offsetX, 0, z + variant.offsetZ]}
               rotation={variant.rotation}
               scale={variant.scale}
-              onSelect={selectHandler}
+              onSelect={treeSelectHandler}
             />
           );
         }
@@ -290,14 +312,33 @@ function TerrainDecorModels({
 
         if (placement.kind === "pond") {
           const variant = pondVariant(placement.x, placement.z);
+          const key = globalCoordKey(gx, gz);
+          const hasHut = fishingHutKeys?.has(key) ?? false;
+          const hutVariant = fishingHutVariant(placement.x, placement.z);
+          const pondPosition: [number, number, number] = [
+            x + variant.offsetX,
+            0,
+            z + variant.offsetZ,
+          ];
+
           return (
-            <PondModel
-              key={placement.key}
-              position={[x + variant.offsetX, 0, z + variant.offsetZ]}
-              rotation={variant.rotation}
-              scale={variant.scale}
-              seed={variant.seed}
-            />
+            <group key={placement.key}>
+              <PondModel
+                position={pondPosition}
+                rotation={variant.rotation}
+                scale={variant.scale}
+                seed={variant.seed}
+                onSelect={selectHandler}
+              />
+              {hasHut ? (
+                <FishingHutModel
+                  position={pondPosition}
+                  rotation={hutVariant.rotation}
+                  scale={hutVariant.scale}
+                  onSelect={selectHandler}
+                />
+              ) : null}
+            </group>
           );
         }
 
@@ -336,6 +377,160 @@ function TerrainDecorModels({
   );
 }
 
+function RevealedSpecialTiles({
+  origin,
+  layoutSize,
+  revealedTiles,
+  builtMines,
+  farms,
+  fishingHutKeys,
+  selectedTileKey,
+  onSelectTile,
+}: {
+  origin: ChunkOrigin;
+  layoutSize: number;
+  revealedTiles: ReadonlyMap<string, RevealedTileKind>;
+  builtMines: readonly BuiltMine[];
+  farms: readonly { gx: number; gz: number }[];
+  fishingHutKeys?: ReadonlySet<string>;
+} & GrassSelectionProps) {
+  const builtMineKeys = useMemo(
+    () => new Set(builtMines.map((mine) => globalCoordKey(mine.gx, mine.gz))),
+    [builtMines],
+  );
+  const farmKeys = useMemo(
+    () => new Set(farms.map((farm) => globalCoordKey(farm.gx, farm.gz))),
+    [farms],
+  );
+
+  const entries = useMemo(() => {
+    const list: {
+      key: string;
+      x: number;
+      z: number;
+      kind: RevealedTileKind;
+    }[] = [];
+
+    for (const [key, kind] of revealedTiles) {
+      const [gxPart, gzPart] = key.split(":");
+      const gx = Number(gxPart);
+      const gz = Number(gzPart);
+      const local = localCoordInChunk(gx, gz, origin, layoutSize);
+      if (!local) {
+        continue;
+      }
+
+      if (
+        kind === "grass" ||
+        kind === "rock" ||
+        kind === "hill" ||
+        kind === "mountain" ||
+        kind === "pond"
+      ) {
+        continue;
+      }
+
+      list.push({ key, x: local.x, z: local.z, kind });
+    }
+
+    return list;
+  }, [revealedTiles, origin, layoutSize]);
+
+  return (
+    <group>
+      {entries.map(({ key, x, z, kind }) => {
+        const gx = origin.gx + x;
+        const gz = origin.gz + z;
+        const { x: worldX, z: worldZ } = globalTileWorldPosition(gx, gz);
+        const selectHandler = hillSelectHandler(gx, gz, onSelectTile);
+
+        if (kind === "goldDeposit") {
+          const depositVariant = oreDepositVariant(x, z);
+          const mineVariant = goldMineVariant(x, z);
+          const built = builtMineKeys.has(key);
+
+          return (
+            <group key={`revealed-gold-${key}`}>
+              {!built ? (
+                <OreDepositModel
+                  kind="gold"
+                  position={[worldX, 0, worldZ]}
+                  rotation={depositVariant.rotation}
+                  scale={depositVariant.scale}
+                  selected={selectedTileKey === key}
+                  onSelect={selectHandler}
+                />
+              ) : (
+                <GoldMineModel
+                  position={[worldX, 0, worldZ]}
+                  rotation={mineVariant.rotation}
+                  scale={mineVariant.scale}
+                />
+              )}
+            </group>
+          );
+        }
+
+        if (kind === "ironDeposit") {
+          const depositVariant = oreDepositVariant(x, z);
+          const mineVariant = ironMineVariant(x, z);
+          const built = builtMineKeys.has(key);
+
+          return (
+            <group key={`revealed-iron-${key}`}>
+              {!built ? (
+                <OreDepositModel
+                  kind="iron"
+                  position={[worldX, 0, worldZ]}
+                  rotation={depositVariant.rotation}
+                  scale={depositVariant.scale}
+                  selected={selectedTileKey === key}
+                  onSelect={selectHandler}
+                />
+              ) : (
+                <IronMineModel
+                  position={[worldX, 0, worldZ]}
+                  rotation={mineVariant.rotation}
+                  scale={mineVariant.scale}
+                />
+              )}
+            </group>
+          );
+        }
+
+        if (kind === "fertile") {
+          const dirtVariant = fertileDirtVariant(x, z);
+          const farmVariant = farmWindmillVariant(x, z);
+          const hasFarm = farmKeys.has(key);
+
+          return (
+            <group key={`revealed-fertile-${key}`}>
+              {!hasFarm ? (
+                <FertileDirtModel
+                  position={[worldX, 0, worldZ]}
+                  rotation={dirtVariant.rotation}
+                  scale={dirtVariant.scale}
+                  selected={selectedTileKey === key}
+                  onSelect={selectHandler}
+                />
+              ) : (
+                <FarmWindmillModel
+                  position={[worldX, 0, worldZ]}
+                  rotation={farmVariant.rotation}
+                  scale={farmVariant.scale}
+                  onSelect={selectHandler}
+                />
+              )}
+            </group>
+          );
+        }
+
+        return null;
+      })}
+    </group>
+  );
+}
+
 export function Terrain({
   layout,
   origin,
@@ -351,10 +546,17 @@ export function Terrain({
   hasIronMine = false,
   fertileDirt = null,
   hasFarm = false,
+  fishingHutKeys,
+  standingForestKeys,
+  revealedTiles,
+  builtMines = [],
+  farms = [],
   clearedObstacleKeys,
   selectedTileKey,
   onSelectTile,
+  onSelectTreeTile,
 }: TerrainProps) {
+  const forestMode = !!standingForestKeys && !!revealedTiles;
   const dirtMaps = useDirtRoadSpriteMaps();
   const stoneMap = useCastleSpriteMap("stone");
 
@@ -380,6 +582,10 @@ export function Terrain({
   }, [layout]);
 
   const blockedSpecialTiles = useMemo(() => {
+    if (forestMode) {
+      return [];
+    }
+
     const tiles: GridCoord[] = [];
     if (goldMine) {
       tiles.push(goldMine);
@@ -391,11 +597,80 @@ export function Terrain({
       tiles.push(fertileDirt);
     }
     return tiles;
-  }, [goldMine, ironMine, fertileDirt]);
+  }, [forestMode, goldMine, ironMine, fertileDirt]);
+
+  const forestTreePlacements = useMemo(() => {
+    if (!forestMode || !standingForestKeys) {
+      return [];
+    }
+
+    const trees: TerrainDecorPlacement[] = [];
+
+    for (let x = 0; x < layout.size; x += 1) {
+      for (let z = 0; z < layout.size; z += 1) {
+        const key = globalCoordKey(origin.gx + x, origin.gz + z);
+        if (!standingForestKeys.has(key)) {
+          continue;
+        }
+
+        trees.push({
+          key: `tree:${x}:${z}`,
+          x,
+          z,
+          kind: "tree",
+        });
+      }
+    }
+
+    return trees;
+  }, [forestMode, standingForestKeys, layout.size, origin]);
+
+  const forestRevealedDecor = useMemo(() => {
+    if (!forestMode || !revealedTiles) {
+      return [];
+    }
+
+    const placements: TerrainDecorPlacement[] = [];
+
+    for (const [key, kind] of revealedTiles) {
+      const [gxPart, gzPart] = key.split(":");
+      const local = localCoordInChunk(
+        Number(gxPart),
+        Number(gzPart),
+        origin,
+        layout.size,
+      );
+      if (!local) {
+        continue;
+      }
+
+      const decorKind = revealedKindToDecorKind(kind);
+      if (!decorKind) {
+        continue;
+      }
+
+      if (decorKind === "rock" && clearedObstacleKeys?.has(key)) {
+        continue;
+      }
+
+      placements.push({
+        key: `${decorKind}:${local.x}:${local.z}`,
+        x: local.x,
+        z: local.z,
+        kind: decorKind,
+      });
+    }
+
+    return placements;
+  }, [forestMode, revealedTiles, origin, layout.size, clearedObstacleKeys]);
 
   const decor = useMemo(() => {
     if (!showDecor) {
       return [];
+    }
+
+    if (forestMode) {
+      return [...forestTreePlacements, ...forestRevealedDecor];
     }
 
     const placements = generateTerrainDecor(layout, {
@@ -415,7 +690,16 @@ export function Terrain({
       const key = globalCoordKey(origin.gx + placement.x, origin.gz + placement.z);
       return !clearedObstacleKeys.has(key);
     });
-  }, [layout, showDecor, blockedSpecialTiles, clearedObstacleKeys, origin]);
+  }, [
+    layout,
+    showDecor,
+    blockedSpecialTiles,
+    clearedObstacleKeys,
+    origin,
+    forestMode,
+    forestTreePlacements,
+    forestRevealedDecor,
+  ]);
 
   const omitGrassKeys = useMemo(() => {
     const keys = new Set<string>();
@@ -434,18 +718,53 @@ export function Terrain({
       }
     }
 
-    if (fertileDirt) {
-      keys.add(`${fertileDirt.x}:${fertileDirt.z}`);
-    }
-    if (goldMine) {
-      keys.add(`${goldMine.x}:${goldMine.z}`);
-    }
-    if (ironMine) {
-      keys.add(`${ironMine.x}:${ironMine.z}`);
+    if (!forestMode) {
+      if (fertileDirt) {
+        keys.add(`${fertileDirt.x}:${fertileDirt.z}`);
+      }
+      if (goldMine) {
+        keys.add(`${goldMine.x}:${goldMine.z}`);
+      }
+      if (ironMine) {
+        keys.add(`${ironMine.x}:${ironMine.z}`);
+      }
+    } else if (revealedTiles) {
+      for (const [key, kind] of revealedTiles) {
+        const [gxPart, gzPart] = key.split(":");
+        const local = localCoordInChunk(
+          Number(gxPart),
+          Number(gzPart),
+          origin,
+          layout.size,
+        );
+        if (!local) {
+          continue;
+        }
+
+        if (standingForestKeys?.has(key)) {
+          keys.add(`${local.x}:${local.z}`);
+          continue;
+        }
+
+        const decorKind = revealedKindToDecorKind(kind);
+        if (decorKind && decorOmitsGrass(decorKind)) {
+          keys.add(`${local.x}:${local.z}`);
+        }
+      }
     }
 
     return keys;
-  }, [layout, decor, fertileDirt, goldMine, ironMine]);
+  }, [
+    layout,
+    decor,
+    fertileDirt,
+    goldMine,
+    ironMine,
+    forestMode,
+    revealedTiles,
+    origin,
+    standingForestKeys,
+  ]);
 
   const goldMineWorld = useMemo(() => {
     if (!goldMine) {
@@ -585,11 +904,25 @@ export function Terrain({
           placements={decor}
           origin={origin}
           showMountains={showMountains}
+          fishingHutKeys={fishingHutKeys}
+          selectedTileKey={selectedTileKey}
+          onSelectTile={onSelectTile}
+          onSelectTreeTile={onSelectTreeTile}
+        />
+      ) : null}
+      {forestMode && revealedTiles ? (
+        <RevealedSpecialTiles
+          origin={origin}
+          layoutSize={layout.size}
+          revealedTiles={revealedTiles}
+          builtMines={builtMines}
+          farms={farms}
+          fishingHutKeys={fishingHutKeys}
           selectedTileKey={selectedTileKey}
           onSelectTile={onSelectTile}
         />
       ) : null}
-      {goldMineWorld ? (
+      {!forestMode && goldMineWorld ? (
         <OreDepositModel
           kind="gold"
           position={goldMineWorld.position}
@@ -603,14 +936,14 @@ export function Terrain({
           )}
         />
       ) : null}
-      {goldMineWorld && hasGoldMine ? (
+      {!forestMode && goldMineWorld && hasGoldMine ? (
         <GoldMineModel
           position={goldMineWorld.position}
           rotation={goldMineWorld.mineRotation}
           scale={goldMineWorld.mineScale}
         />
       ) : null}
-      {ironMineWorld ? (
+      {!forestMode && ironMineWorld ? (
         <OreDepositModel
           kind="iron"
           position={ironMineWorld.position}
@@ -624,14 +957,14 @@ export function Terrain({
           )}
         />
       ) : null}
-      {ironMineWorld && hasIronMine ? (
+      {!forestMode && ironMineWorld && hasIronMine ? (
         <IronMineModel
           position={ironMineWorld.position}
           rotation={ironMineWorld.mineRotation}
           scale={ironMineWorld.mineScale}
         />
       ) : null}
-      {fertileWorld ? (
+      {!forestMode && fertileWorld ? (
         <FertileDirtModel
           position={fertileWorld.position}
           rotation={fertileWorld.dirtRotation}
@@ -644,7 +977,7 @@ export function Terrain({
           )}
         />
       ) : null}
-      {fertileWorld && hasFarm ? (
+      {!forestMode && fertileWorld && hasFarm ? (
         <FarmWindmillModel
           position={fertileWorld.position}
           rotation={fertileWorld.farmRotation}

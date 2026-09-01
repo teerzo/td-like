@@ -7,12 +7,15 @@ import {
   BuildActionMenu,
   BuildIconPreview,
 } from "@/components/game/build-action-menu";
-import { TowerModel } from "@/components/game/models";
+import { TowerModel, TOWER_MENU_PREVIEW_CAMERA, TOWER_MENU_PREVIEW_POSITION } from "@/components/game/models";
+import { TowerMenuHoverDetails } from "@/components/game/tower-hover-card";
+import { TowerCombatStats } from "@/components/game/combat-stats-display";
+import { ResourceCostRow } from "@/components/game/resource-icon";
+import { formatTowerCounterHint } from "@/lib/combat-counters";
 import {
   getTowerSellRefund,
   getTowerStatsAtLevel,
   getTowerUpgradeCost,
-  MAX_TOWER_LEVEL,
   type TowerTypeId,
 } from "@/lib/tower-types";
 
@@ -49,6 +52,7 @@ export const TowerManageMenu = forwardRef<HTMLDivElement, TowerManageMenuProps>(
         clientX={menu.clientX}
         clientY={menu.clientY}
         closeLabel="Close tower menu"
+        portraitArc="topHalf"
         onClose={onClose}
         actions={[
           {
@@ -56,17 +60,44 @@ export const TowerManageMenu = forwardRef<HTMLDivElement, TowerManageMenuProps>(
             label: atMax
               ? `${stats.label} max level`
               : `Upgrade ${stats.label} to Lv ${(menu.level ?? 1) + 1}`,
-            costNote: atMax ? `Lv ${MAX_TOWER_LEVEL}` : undefined,
             costs: atMax
               ? undefined
               : [{ resource: "gold", amount: upgradeCost! }],
             canAfford: atMax ? true : canAffordUpgrade,
             disabled: atMax,
+            showCostBadge: false,
+            hoverContent: (
+              <TowerMenuHoverDetails
+                name={stats.label}
+                targetMovement={stats.targetMovement}
+                targetPriority={stats.targetPriority}
+                subtitle={
+                  atMax
+                    ? `Max level (Lv ${menu.level})`
+                    : `Upgrade to Lv ${(menu.level ?? 1) + 1}`
+                }
+              >
+                {!atMax ? (
+                  <div className="mt-2">
+                    <ResourceCostRow
+                      costs={[{ resource: "gold", amount: upgradeCost! }]}
+                    />
+                  </div>
+                ) : null}
+                <p className="mt-2 text-white/70">
+                  {formatTowerCounterHint(stats.role)}
+                </p>
+                <TowerCombatStats stats={stats} />
+                <p className="mt-2 text-white/55">
+                  {stats.attackRangeTiles} range · {stats.attackCooldown}s
+                </p>
+              </TowerMenuHoverDetails>
+            ),
             preview: (
-              <BuildIconPreview>
+              <BuildIconPreview cameraPosition={TOWER_MENU_PREVIEW_CAMERA}>
                 <TowerModel
                   typeId={menu.typeId}
-                  position={[0, -0.05, 0]}
+                  position={TOWER_MENU_PREVIEW_POSITION}
                 />
               </BuildIconPreview>
             ),
@@ -78,6 +109,23 @@ export const TowerManageMenu = forwardRef<HTMLDivElement, TowerManageMenuProps>(
             costs: [{ resource: "gold", amount: sellRefund, gain: true }],
             costTone: "refund",
             canAfford: true,
+            showCostBadge: false,
+            hoverContent: (
+              <TowerMenuHoverDetails
+                name={stats.label}
+                targetMovement={stats.targetMovement}
+                targetPriority={stats.targetPriority}
+                subtitle="Destroy tower"
+              >
+                <div className="mt-2">
+                  <ResourceCostRow
+                    costs={[
+                      { resource: "gold", amount: sellRefund, gain: true },
+                    ]}
+                  />
+                </div>
+              </TowerMenuHoverDetails>
+            ),
             preview: (
               <div className="flex h-full w-full items-center justify-center bg-rose-950/50">
                 <Trash2

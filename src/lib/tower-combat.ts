@@ -4,7 +4,55 @@ import {
   getAttackRangeWorldFromTiles,
   HILL_TOWER_RANGE_BONUS_TILES,
   type TowerStats,
+  type TowerTargetPriority,
 } from "@/lib/tower-types";
+
+export type TowerTargetCandidate = {
+  id: number;
+  hp: number;
+  distance: number;
+};
+
+export function pickTowerTarget(
+  candidates: readonly TowerTargetCandidate[],
+  priority: TowerTargetPriority,
+): number | null {
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  let best = candidates[0]!;
+
+  for (let index = 1; index < candidates.length; index += 1) {
+    const candidate = candidates[index]!;
+
+    if (priority === "lowestHp") {
+      if (
+        candidate.hp < best.hp ||
+        (candidate.hp === best.hp && candidate.distance < best.distance)
+      ) {
+        best = candidate;
+      }
+      continue;
+    }
+
+    if (priority === "highestHp") {
+      if (
+        candidate.hp > best.hp ||
+        (candidate.hp === best.hp && candidate.distance < best.distance)
+      ) {
+        best = candidate;
+      }
+      continue;
+    }
+
+    if (candidate.distance < best.distance) {
+      best = candidate;
+    }
+  }
+
+  return best.id;
+}
 
 export const TOWER_MUZZLE_Y = 0.9;
 

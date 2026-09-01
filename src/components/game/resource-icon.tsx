@@ -18,27 +18,27 @@ const RESOURCE_META: Record<
   gold: {
     label: "Gold",
     Icon: Coins,
-    iconClass: "text-amber-300",
+    iconClass: "fill-amber-300 text-amber-300",
   },
   iron: {
     label: "Iron",
     Icon: Pickaxe,
-    iconClass: "text-slate-300",
+    iconClass: "fill-slate-300 text-slate-300",
   },
   wood: {
     label: "Wood",
     Icon: TreePine,
-    iconClass: "text-lime-400",
+    iconClass: "fill-lime-400 text-lime-400",
   },
   stone: {
     label: "Stone",
     Icon: BrickWall,
-    iconClass: "text-stone-300",
+    iconClass: "fill-stone-300 text-stone-300",
   },
   food: {
     label: "Food",
     Icon: Apple,
-    iconClass: "text-orange-300",
+    iconClass: "fill-orange-300 text-orange-300",
   },
 };
 
@@ -63,7 +63,7 @@ export function ResourceIcon({
       aria-label={label}
       className={`shrink-0 ${iconClass} ${className}`}
       size={size}
-      strokeWidth={2.25}
+      strokeWidth={1.75}
     />
   );
 }

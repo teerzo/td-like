@@ -1,7 +1,7 @@
 /** Starting wood / stone / food (gold & iron keep their existing constants). */
 export const STARTING_WOOD = 0;
 export const STARTING_STONE = 0;
-export const STARTING_FOOD = 10;
+export const STARTING_FOOD = 2;
 
 /** Clear a tree: pay gold, gain wood. */
 export const TREE_CLEAR_COST = 1;

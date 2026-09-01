@@ -7,15 +7,13 @@ import {
   type WorldLayout,
 } from "@/lib/world-layout";
 
-/** Passive income from the main-grid gold mine. */
-export const GOLD_MINE_INCOME = 1;
-export const GOLD_MINE_INTERVAL_MS = 2500;
+/** Gold granted by the gold mine when a wave/level is cleared. */
+export const GOLD_MINE_INCOME = 5;
 /** Gold cost to build on a gold deposit. */
 export const GOLD_MINE_COST = 40;
 
-/** Passive income from the main-grid iron mine. */
-export const IRON_MINE_INCOME = 1;
-export const IRON_MINE_INTERVAL_MS = 3000;
+/** Iron granted by the iron mine when a wave/level is cleared. */
+export const IRON_MINE_INCOME = 5;
 /** Gold cost to build on an iron deposit. */
 export const IRON_MINE_COST = 50;
 

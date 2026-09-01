@@ -156,7 +156,7 @@ async function main() {
       fog: Number(fogMeshes.toFixed(0)),
       mainLevelTotal: Number(mainMeshes.toFixed(0)),
       mainPlusPreviewApprox: Number((mainMeshes + previewMeshes).toFixed(0)),
-      perTowerRook: 81,
+      perTowerCannon: 81,
       perTowerArcher: 30,
       perEnemy: 4,
     },

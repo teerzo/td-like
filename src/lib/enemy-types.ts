@@ -1,9 +1,16 @@
 import type { DamageType } from "@/lib/damage-types";
 
 export type EnemyMovementType = "ground" | "flying";
+
+/** Tags used for tower role counters. */
+export type EnemyRole =
+  | "swarm"
+  | "skirmisher"
+  | "armored"
+  | "siege"
+  | "flying";
+
 export type EnemyTypeId =
-  | "grunt"
-  | "flyer"
   | "peon"
   | "archer"
   | "knight"
@@ -11,8 +18,6 @@ export type EnemyTypeId =
   | "dragon";
 
 export const ENEMY_TYPE_IDS: EnemyTypeId[] = [
-  "grunt",
-  "flyer",
   "peon",
   "archer",
   "knight",
@@ -33,6 +38,7 @@ export type EnemyStats = {
   id: EnemyTypeId;
   label: string;
   movementType: EnemyMovementType;
+  roles: readonly EnemyRole[];
   moveSpeed: number;
   health: number;
   armor: number;
@@ -41,32 +47,13 @@ export type EnemyStats = {
 };
 
 export const ENEMY_TYPES: Record<EnemyTypeId, EnemyStats> = {
-  grunt: {
-    id: "grunt",
-    label: "Grunt",
-    movementType: "ground",
-    moveSpeed: 1.25,
-    health: 1,
-    armor: 0,
-    immunities: [],
-    goldReward: 1,
-  },
-  flyer: {
-    id: "flyer",
-    label: "Flyer",
-    movementType: "flying",
-    moveSpeed: 1.75,
-    health: 1,
-    armor: 0,
-    immunities: [],
-    goldReward: 1,
-  },
   peon: {
     id: "peon",
     label: "Peon",
     movementType: "ground",
+    roles: ["swarm"],
     moveSpeed: 1.4,
-    health: 1,
+    health: 10,
     armor: 0,
     immunities: [],
     goldReward: 1,
@@ -75,8 +62,9 @@ export const ENEMY_TYPES: Record<EnemyTypeId, EnemyStats> = {
     id: "archer",
     label: "Archer",
     movementType: "ground",
+    roles: ["skirmisher"],
     moveSpeed: 1.35,
-    health: 2,
+    health: 15,
     armor: 0,
     immunities: [],
     goldReward: 2,
@@ -85,9 +73,10 @@ export const ENEMY_TYPES: Record<EnemyTypeId, EnemyStats> = {
     id: "knight",
     label: "Knight",
     movementType: "ground",
+    roles: ["armored"],
     moveSpeed: 1.05,
-    health: 4,
-    armor: 1,
+    health: 32,
+    armor: 2,
     immunities: [],
     goldReward: 3,
   },
@@ -95,8 +84,9 @@ export const ENEMY_TYPES: Record<EnemyTypeId, EnemyStats> = {
     id: "catapult",
     label: "Catapult",
     movementType: "ground",
+    roles: ["siege"],
     moveSpeed: 0.75,
-    health: 5,
+    health: 45,
     armor: 0,
     immunities: [],
     goldReward: 4,
@@ -105,16 +95,48 @@ export const ENEMY_TYPES: Record<EnemyTypeId, EnemyStats> = {
     id: "dragon",
     label: "Dragon",
     movementType: "flying",
+    roles: ["flying", "armored"],
     moveSpeed: 1.55,
-    health: 6,
-    armor: 1,
+    health: 28,
+    armor: 2,
     immunities: [],
-    goldReward: 6,
+    goldReward: 7,
   },
 };
 
 export function getEnemyStats(typeId: EnemyTypeId): EnemyStats {
   return ENEMY_TYPES[typeId];
+}
+
+/** +8% move speed per wave after wave 1 (wave 1 = 1×). */
+export const WAVE_MOVE_SPEED_BONUS_PER_LEVEL = 0.08;
+export const WAVE_MOVE_SPEED_MAX_MULTIPLIER = 2.5;
+
+export function getWaveMoveSpeedMultiplier(waveLevel: number): number {
+  const steps = Math.max(0, waveLevel - 1);
+  const multiplier = 1 + steps * WAVE_MOVE_SPEED_BONUS_PER_LEVEL;
+  return Math.min(WAVE_MOVE_SPEED_MAX_MULTIPLIER, multiplier);
+}
+
+export function getEnemyMoveSpeedForWave(
+  baseMoveSpeed: number,
+  waveLevel: number,
+): number {
+  return baseMoveSpeed * getWaveMoveSpeedMultiplier(waveLevel);
+}
+
+/** Base ms between inbound spawns at wave 1; reduced each wave (faster spawns). */
+export const WAVE_SPAWN_STAGGER_BASE_MS = 900;
+export const WAVE_SPAWN_STAGGER_REDUCTION_PER_LEVEL = 0.04;
+export const WAVE_SPAWN_STAGGER_MIN_MULTIPLIER = 0.45;
+
+export function getWaveSpawnStaggerMs(waveLevel: number): number {
+  const steps = Math.max(0, waveLevel - 1);
+  const multiplier = Math.max(
+    WAVE_SPAWN_STAGGER_MIN_MULTIPLIER,
+    1 - steps * WAVE_SPAWN_STAGGER_REDUCTION_PER_LEVEL,
+  );
+  return Math.round(WAVE_SPAWN_STAGGER_BASE_MS * multiplier);
 }
 
 /** Apply immunity + armor; returns HP lost this hit. */

@@ -5,9 +5,9 @@ import { useMemo, useRef } from "react";
 import * as THREE from "three";
 
 const DAY_BG = new THREE.Color("#7ea3c9");
-const NIGHT_BG = new THREE.Color("#0b1220");
+const NIGHT_BG = new THREE.Color("#243a5c");
 const SUN_COLOR = new THREE.Color("#fff1d6");
-const MOON_COLOR = new THREE.Color("#a8b8e8");
+const MOON_COLOR = new THREE.Color("#c4d0f0");
 
 type DayNightCycleProps = {
   /** Gameplay phase — lighting eases toward day or night. */
@@ -43,7 +43,7 @@ export function DayNightCycle({ isNight }: DayNightCycleProps) {
     }
 
     if (ambientRef.current) {
-      ambientRef.current.intensity = 0.18 + day * 0.42;
+      ambientRef.current.intensity = 0.44 + day * 0.28;
     }
 
     if (sunRef.current) {
@@ -55,12 +55,12 @@ export function DayNightCycle({ isNight }: DayNightCycleProps) {
         Math.sin(elevation) * radius,
         Math.sin(azimuth) * radius * 0.65,
       );
-      sunRef.current.intensity = 0.05 + day * 1.35;
+      sunRef.current.intensity = 0.22 + day * 1.18;
       sunRef.current.color.copy(SUN_COLOR);
     }
 
     if (moonRef.current) {
-      moonRef.current.intensity = night * 0.45;
+      moonRef.current.intensity = night * 0.9;
       moonRef.current.color.copy(MOON_COLOR);
     }
   });

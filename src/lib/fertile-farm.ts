@@ -28,9 +28,8 @@ export function canAffordFarm(resources: {
   );
 }
 
-/** Passive food income from a placed farm. */
-export const FARM_INCOME = 1;
-export const FARM_INTERVAL_MS = 4000;
+/** Food granted per farm when a wave/level is cleared. */
+export const FARM_INCOME = 5;
 
 export const BUILD_PLOT_SIZE = 5;
 

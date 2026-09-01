@@ -18,8 +18,12 @@ export {
 } from "@/components/game/models/hill-tile";
 export { MountainModel, mountainVariant } from "@/components/game/models/mountain";
 export { PondModel, pondVariant } from "@/components/game/models/pond";
+export {
+  FishingHutModel,
+  fishingHutVariant,
+} from "@/components/game/models/fishing-hut";
 export { RockModel, rockVariant } from "@/components/game/models/rock";
 export { EnemyModel } from "@/components/game/models/enemy";
-export { TowerModel } from "@/components/game/models/tower";
+export { TowerModel, TOWER_MENU_PREVIEW_CAMERA, TOWER_MENU_PREVIEW_POSITION } from "@/components/game/models/tower";
 export { TreeModel, treeVariant } from "@/components/game/models/tree";
 export { VoxelBox } from "@/components/game/models/voxel-box";

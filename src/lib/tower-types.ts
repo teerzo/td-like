@@ -1,11 +1,22 @@
 import type { DamageType } from "@/lib/damage-types";
+import type { EnemyMovementType } from "@/lib/enemy-types";
 import { TILE_SPACING } from "@/lib/terrain";
 
-export type TowerTypeId = "rook" | "archer" | "mage";
+export type TowerTypeId = "cannon" | "archer" | "ballista" | "mage";
+
+/** Combat specialty used for counter bonuses vs enemy roles. */
+export type TowerRole = "bruiser" | "marksman" | "arcanist";
+
+export type TowerTargetPriority = "nearest" | "lowestHp" | "highestHp";
 
 export type TowerStats = {
   id: TowerTypeId;
   label: string;
+  role: TowerRole;
+  /** Which enemy movement types this tower can acquire and damage. */
+  targetMovement: EnemyMovementType | "any";
+  /** How in-range enemies are prioritized when acquiring a target. */
+  targetPriority: TowerTargetPriority;
   attackRangeTiles: number;
   attackCooldown: number;
   projectileSpeed: number;
@@ -15,7 +26,12 @@ export type TowerStats = {
   cost: number;
 };
 
-export const TOWER_TYPE_IDS: TowerTypeId[] = ["rook", "archer", "mage"];
+export const TOWER_TYPE_IDS: TowerTypeId[] = [
+  "archer",
+  "ballista",
+  "mage",
+  "cannon",
+];
 
 export const STARTING_GOLD = 10;
 
@@ -23,43 +39,106 @@ export const STARTING_GOLD = 10;
 export const HILL_TOWER_RANGE_BONUS_TILES = 1.5;
 
 export const TOWER_TYPES: Record<TowerTypeId, TowerStats> = {
-  rook: {
-    id: "rook",
-    label: "Rook",
-    attackRangeTiles: 3,
-    attackCooldown: 0.75,
+  cannon: {
+    id: "cannon",
+    label: "Cannon",
+    role: "bruiser",
+    targetMovement: "ground",
+    targetPriority: "nearest",
+    attackRangeTiles: 2,
+    attackCooldown: 1.9,
     projectileSpeed: 14,
-    projectileAoeTiles: 0,
-    damage: 1,
+    projectileAoeTiles: 2,
+    damage: 22,
     damageType: "physical",
-    cost: 10,
+    cost: 60,
   },
   archer: {
     id: "archer",
     label: "Archer",
-    attackRangeTiles: 5,
-    attackCooldown: 0.45,
+    role: "marksman",
+    targetMovement: "any",
+    targetPriority: "lowestHp",
+    attackRangeTiles: 3,
+    attackCooldown: 1,
     projectileSpeed: 22,
     projectileAoeTiles: 0,
-    damage: 1,
+    damage: 6,
     damageType: "physical",
     cost: 10,
+  },
+  ballista: {
+    id: "ballista",
+    label: "Ballista",
+    role: "bruiser",
+    targetMovement: "any",
+    targetPriority: "highestHp",
+    attackRangeTiles: 3,
+    attackCooldown: 2.4,
+    projectileSpeed: 20,
+    projectileAoeTiles: 0,
+    damage: 42,
+    damageType: "physical",
+    cost: 45,
   },
   mage: {
     id: "mage",
     label: "Mage",
-    attackRangeTiles: 3.5,
-    attackCooldown: 1.1,
+    role: "arcanist",
+    targetMovement: "flying",
+    targetPriority: "nearest",
+    attackRangeTiles: 3,
+    attackCooldown: 0.55,
     projectileSpeed: 10,
     projectileAoeTiles: 1.25,
-    damage: 2,
+    damage: 9,
     damageType: "fire",
-    cost: 10,
+    cost: 30,
   },
 };
 
 export function getTowerStats(typeId: TowerTypeId): TowerStats {
   return TOWER_TYPES[typeId];
+}
+
+export function canTowerTargetMovement(
+  tower: Pick<TowerStats, "targetMovement">,
+  movementType: EnemyMovementType,
+): boolean {
+  return (
+    tower.targetMovement === "any" || tower.targetMovement === movementType
+  );
+}
+
+export function formatTowerTargetHint(
+  targetMovement: TowerStats["targetMovement"],
+): string {
+  return `Hits ${formatTowerTargetCategory(targetMovement)}`;
+}
+
+export function formatTowerTargetCategory(
+  targetMovement: TowerStats["targetMovement"],
+): string {
+  if (targetMovement === "ground") {
+    return "Ground";
+  }
+  if (targetMovement === "flying") {
+    return "Air";
+  }
+  return "Ground & Air";
+}
+
+export function formatTowerTargetPriority(
+  priority: TowerTargetPriority,
+): string {
+  switch (priority) {
+    case "lowestHp":
+      return "Targets lowest HP";
+    case "highestHp":
+      return "Targets highest HP";
+    default:
+      return "Targets nearest";
+  }
 }
 
 export const MAX_TOWER_LEVEL = 3;

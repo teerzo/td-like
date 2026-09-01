@@ -1,9 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useState } from "react";
 
 import { FpsCounter } from "@/components/fps-counter";
+import { AutoplayToggle } from "@/components/game/autoplay-toggle";
+import { FreezeMapToggle } from "@/components/game/freeze-map-toggle";
+import { useGameSettings } from "@/components/game/game-settings-provider";
 import { PlayPerfToggles } from "@/components/game/play-perf-toggles";
 import { LoginForm } from "@/components/login-form";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -18,9 +22,17 @@ import {
 
 export function FloatingNav() {
   const [loginOpen, setLoginOpen] = useState(false);
+  const pathname = usePathname();
+  const isPlayPage = pathname === "/play";
+  const {
+    autoplayEnabled,
+    setAutoplayEnabled,
+    freezeMapExpansion,
+    setFreezeMapExpansion,
+  } = useGameSettings();
 
   return (
-    <nav className="pointer-events-none fixed inset-x-0 top-0 z-50 flex flex-col items-center pt-4">
+    <nav className="pointer-events-none fixed inset-x-0 top-0 z-50 flex flex-col items-center">
       <div className="pointer-events-auto flex w-full max-w-5xl items-center justify-between gap-3 bg-transparent px-3 py-2">
         <div className="flex items-baseline gap-3 px-2">
           <Link href="/">
@@ -31,6 +43,26 @@ export function FloatingNav() {
           <FpsCounter />
         </div>
         <div className="flex items-center gap-2">
+          {isPlayPage ? (
+            <>
+              <div className="flex items-center gap-2">
+                <AutoplayToggle
+                  enabled={autoplayEnabled}
+                  onToggle={() => setAutoplayEnabled((current) => !current)}
+                />
+                <FreezeMapToggle
+                  enabled={freezeMapExpansion}
+                  onToggle={() =>
+                    setFreezeMapExpansion((current) => !current)
+                  }
+                />
+              </div>
+              <div
+                className="h-7 w-px shrink-0 bg-white/25"
+                aria-hidden
+              />
+            </>
+          ) : null}
           <Button
             variant="ghost"
             className="text-white hover:bg-white/10 hover:text-white"
